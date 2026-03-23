@@ -1,5 +1,47 @@
-const CACHE_NAME = 'voxpod-v1';
-const APP_SHELL = ['/', '/manifest.json'];
+const CACHE_NAME = 'voxpod-v2';
+const APP_SHELL = ['/manifest.json'];
+
+const isCacheableAsset = (request) => {
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return false;
+  if (url.pathname.startsWith('/api/')) return false;
+  if (request.mode === 'navigate') return false;
+  return (
+    url.pathname.startsWith('/assets/') ||
+    url.pathname === '/manifest.json' ||
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    request.destination === 'image' ||
+    request.destination === 'font'
+  );
+};
+
+const networkFirst = async (request) => {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    const cachedResponse = await cache.match(request);
+    if (cachedResponse) return cachedResponse;
+    throw error;
+  }
+};
+
+const cacheFirst = async (request) => {
+  const cache = await caches.open(CACHE_NAME);
+  const cachedResponse = await cache.match(request);
+  if (cachedResponse) return cachedResponse;
+
+  const networkResponse = await fetch(request);
+  if (networkResponse.ok) {
+    cache.put(request, networkResponse.clone());
+  }
+  return networkResponse;
+};
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -20,19 +62,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
 
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse.ok || event.request.url.startsWith('chrome-extension://')) {
-          return networkResponse;
-        }
+  if (!isCacheableAsset(event.request)) {
+    return;
+  }
 
-        const responseClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
-        return networkResponse;
-      });
-    })
-  );
+  event.respondWith(cacheFirst(event.request));
 });
