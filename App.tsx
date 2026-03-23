@@ -810,7 +810,7 @@ const App: React.FC = () => {
       setInputText(prev => prev ? `${prev}\n\n${extracted}` : extracted);
       setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
     } catch (err) {
-      setError("PDF-läsning misslyckades.");
+      setError(err instanceof Error && err.message ? err.message : "PDF-läsning misslyckades.");
     } finally {
       setIsScanning(null);
       setScanSession(null);
@@ -945,8 +945,10 @@ const App: React.FC = () => {
           <button onClick={() => fileInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
             {isScanning?.includes("bild") ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
-          <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" />
-          <input type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept="application/pdf" className="hidden" />
+          <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
+          <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
+          <label htmlFor="pdf-upload" className="sr-only">{t('pdf_btn')}</label>
+          <input id="pdf-upload" name="pdf-upload" type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept="application/pdf" className="hidden" aria-label={t('pdf_btn')} />
         </div>
 
         {activeStatus && (
@@ -1003,13 +1005,19 @@ const App: React.FC = () => {
 
         <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
           <div className="relative">
+            <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
             <textarea
+              id="podcast-text"
+              name="podcast-text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder={t('placeholder_text')}
               className="w-full h-32 p-5 bg-gray-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100"
             />
+            <label htmlFor="personal-notes" className="sr-only">{t('placeholder_notes')}</label>
             <textarea
+              id="personal-notes"
+              name="personal-notes"
               value={inputNotes}
               onChange={(e) => setInputNotes(e.target.value)}
               placeholder={t('placeholder_notes')}
@@ -1061,8 +1069,8 @@ const App: React.FC = () => {
           
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
-              <select value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer">
+              <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
+              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer">
                 {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
               </select>
             </div>
@@ -1070,10 +1078,12 @@ const App: React.FC = () => {
 
           <div className="px-2 space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] font-black uppercase text-gray-400">{t('speed_label')}</label>
+              <label htmlFor="speed-slider" className="text-[10px] font-black uppercase text-gray-400">{t('speed_label')}</label>
               <span className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{playbackRate}x</span>
             </div>
             <input 
+              id="speed-slider"
+              name="speed-slider"
               type="range" min="0.4" max="2.0" step="0.1" 
               value={playbackRate} 
               onChange={(e) => {
@@ -1151,12 +1161,15 @@ const App: React.FC = () => {
                   style={{ width: `${player.duration ? (player.currentTime / player.duration) * 100 : 0}%` }}
                 />
                 <input 
+                  id="playback-seek"
+                  name="playback-seek"
                   type="range" 
                   min="0" 
                   max="100" 
                   step="0.1"
                   value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
                   onChange={handleSeek}
+                  aria-label="Playback position"
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
               </div>

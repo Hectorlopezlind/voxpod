@@ -55,11 +55,16 @@ const isNonEmptyString = (value: unknown): value is string =>
 const json = (body: unknown, status: number = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
-const getAiClient = (apiKeyOverride?: string | null) => {
+const getApiKey = (apiKeyOverride?: string | null) => {
   const apiKey = apiKeyOverride ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("Servern saknar GEMINI_API_KEY.");
   }
+  return apiKey;
+};
+
+const getAiClient = (apiKeyOverride?: string | null) => {
+  const apiKey = getApiKey(apiKeyOverride);
   return new GoogleGenAI({ apiKey });
 };
 
@@ -79,6 +84,9 @@ const normalizeApiError = (error: unknown) => {
   }
   if (message.includes("429") || message.includes("quota")) {
     return json({ error: "Gemini-gränsen är nådd. Vänta en minut och försök igen." }, 429);
+  }
+  if (message.includes("pdf")) {
+    return json({ error: "PDF-läsning misslyckades på serversidan. Prova en mindre eller enklare PDF." }, 500);
   }
   return json({ error: "Ett oväntat serverfel uppstod." }, 500);
 };
@@ -163,6 +171,52 @@ const parseStructuredNotes = (rawText: string): EpisodeNotes => {
   };
 };
 
+type GenerateContentResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+};
+
+const extractGeneratedText = (response: GenerateContentResponse) =>
+  response.candidates
+    ?.flatMap(candidate => candidate.content?.parts ?? [])
+    .map(part => part.text?.trim() ?? "")
+    .find(Boolean) ?? "";
+
+const callGeminiRest = async (
+  model: string,
+  body: Record<string, unknown>,
+  options?: GeminiHandlerOptions
+) => {
+  const apiKey = getApiKey(options?.apiKey);
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Gemini REST ${response.status}: ${responseText}`);
+  }
+
+  try {
+    return JSON.parse(responseText) as GenerateContentResponse;
+  } catch {
+    throw new Error("Gemini REST returnerade ogiltig JSON.");
+  }
+};
+
 const handleTts = async (body: TtsBody, options?: GeminiHandlerOptions) => {
   if (!isNonEmptyString(body.text)) return badRequest("Text saknas.");
   if (!validateVoice(body.voice)) return badRequest("Ogiltig röst.");
@@ -233,23 +287,35 @@ const handleExtractImage = async (body: ExtractImageBody, options?: GeminiHandle
 const handleExtractPdf = async (body: ExtractPdfBody, options?: GeminiHandlerOptions) => {
   if (!isNonEmptyString(body.base64Data)) return badRequest("PDF-data saknas.");
 
-  const ai = getAiClient(options?.apiKey);
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [
-      {
-        parts: [
-          { inlineData: { data: body.base64Data, mimeType: "application/pdf" } },
-          {
-            text:
-              "Extrahera all text från detta dokument. Hantera olika sidorienteringar och layouter. Städa upp sidhuvuden/sidfötter och sidnummer så att det blir en flytande text lämplig för en ljudbok/podd. Returnera ENDAST texten."
-          }
-        ]
-      }
-    ],
-  });
+  const response = await callGeminiRest(
+    "gemini-2.5-flash",
+    {
+      contents: [
+        {
+          parts: [
+            {
+              text:
+                "Extrahera all text från detta dokument. Hantera olika sidorienteringar och layouter. Städa upp sidhuvuden, sidfötter och sidnummer så att resultatet blir en flytande text lämplig för en ljudbok eller podd. Returnera ENDAST texten."
+            },
+            {
+              inline_data: {
+                mime_type: "application/pdf",
+                data: body.base64Data,
+              }
+            }
+          ]
+        }
+      ]
+    },
+    options
+  );
 
-  return json({ text: response.text || "" });
+  const text = extractGeneratedText(response);
+  if (!text) {
+    throw new Error("PDF-filen gav ingen extraherbar text.");
+  }
+
+  return json({ text });
 };
 
 const handleGenerateNotes = async (body: GenerateNotesBody, options?: GeminiHandlerOptions) => {
