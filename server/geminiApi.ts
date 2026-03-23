@@ -16,6 +16,8 @@ PERFORMANCE DIRECTIVES (ULTRA-SMOOTH):
 3. MULTILINGUAL MASTERY & AUTO-DETECTION: 
    - Automatically identify the language of the text (Swedish, English, Spanish, French, German, etc.).
    - If the text is SWEDISH: Perfect pronunciation of Å, Ä, and Ö. Natural prosody without robotic pauses.
+   - For SWEDISH specifically: use the soft "sk" sound before e, i, y, ä, ö as in "Skärholmen"; use the soft "k" sound before e, i, y, ä, ö as in "köpkraft"; use the soft "g" sound before e, i, y, ä, ö as in "gynnat".
+   - Preserve correct Swedish place names and personal names. Do not anglicize or flatten Swedish consonant sounds.
    - If the text is ENGLISH: Use a natural, native English accent. Ensure numbers and dates are read in English (e.g., "123" as "one hundred twenty-three").
    - If the text is SPANISH: Correct pronunciation of 'ñ', 'rr', and accents.
    - For ALL languages: Use the correct phonetics, stress, and intonation for that specific language. DO NOT use a Swedish accent for non-Swedish text.

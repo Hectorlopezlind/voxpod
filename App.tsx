@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { VoiceName, ReadingSpeed, PodcastEpisode, PlayerState, EpisodeNotes } from './types';
+import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes } from './types';
 import { generateTTS, translateText, extractTextFromImage, extractTextFromPdf, generateNotes } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix } from './services/dbService';
 import { 
@@ -66,6 +66,7 @@ const TRANSLATIONS: Record<string, any> = {
   en: {
     app_subtitle: 'AI Podcast Streamer',
     pdf_btn: '📄 PDF',
+    camera_btn: '📸 Camera',
     images_btn: '📷 IMAGES',
     scanning_pdf: 'Reading PDF...',
     scanning_images: 'Reading images...',
@@ -96,11 +97,14 @@ const TRANSLATIONS: Record<string, any> = {
     almost_done: 'Almost done',
     target_label: 'Target',
     files_label: 'files',
-    step_label: 'Step'
+    step_label: 'Step',
+    image_order_title: 'Image order',
+    image_order_hint: 'The app reads images in this order.'
   },
   sv: {
     app_subtitle: 'AI Podcast Streamer',
     pdf_btn: '📄 PDF',
+    camera_btn: '📸 Kamera',
     images_btn: '📷 BILDER',
     scanning_pdf: 'Läser PDF...',
     scanning_images: 'Läser bilder...',
@@ -131,7 +135,9 @@ const TRANSLATIONS: Record<string, any> = {
     almost_done: 'Snart klar',
     target_label: 'Målspråk',
     files_label: 'filer',
-    step_label: 'Steg'
+    step_label: 'Steg',
+    image_order_title: 'Bildordning',
+    image_order_hint: 'Appen läser bilderna i den här ordningen.'
   }
 };
 
@@ -180,6 +186,32 @@ const formatCountdown = (seconds: number) => {
   }
   return `${safeSeconds}s`;
 };
+
+const imageNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base'
+});
+
+type QueuedImagePreview = {
+  id: string;
+  label: string;
+  order: number;
+  url: string;
+};
+
+const sortFilesForReading = (files: File[]) =>
+  files
+    .map((file, index) => ({ file, index }))
+    .sort((a, b) => {
+      const nameComparison = imageNameCollator.compare(a.file.name, b.file.name);
+      if (nameComparison !== 0) return nameComparison;
+
+      const modifiedComparison = a.file.lastModified - b.file.lastModified;
+      if (modifiedComparison !== 0) return modifiedComparison;
+
+      return a.index - b.index;
+    })
+    .map(({ file }) => file);
 
 const NOTES_UI_LABELS = {
   en: {
@@ -289,6 +321,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const [searchBuffer, setSearchBuffer] = useState('');
@@ -297,6 +330,7 @@ const App: React.FC = () => {
   const [scanSession, setScanSession] = useState<ScanSession | null>(null);
   const [translateSession, setTranslateSession] = useState<TranslateSession | null>(null);
   const [generationSession, setGenerationSession] = useState<GenerationSession | null>(null);
+  const [imageQueue, setImageQueue] = useState<QueuedImagePreview[]>([]);
 
   // Cache for pre-loaded chunks to prevent gaps
   const chunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
@@ -309,6 +343,12 @@ const App: React.FC = () => {
     activeEpisode: null,
     currentChunkIndex: 0
   });
+
+  useEffect(() => {
+    return () => {
+      imageQueue.forEach(image => URL.revokeObjectURL(image.url));
+    };
+  }, [imageQueue]);
 
   // Handle click outside to close language menu
   useEffect(() => {
@@ -490,7 +530,7 @@ const App: React.FC = () => {
         id, title, text: inputText, date: Date.now(),
         voice: selectedVoice, audioBlobId: id, 
         chunkCount: chunks.length, duration: 0,
-        playbackRate
+        playbackRate: 1
       };
 
       const firstChunkBase64 = await generateTTS(chunks[0], selectedVoice as VoiceName);
@@ -609,7 +649,7 @@ const App: React.FC = () => {
       }
 
       loadAudioFromBuffer(data);
-      setPlaybackRate(playbackRate);
+      setPlaybackRate(episode.playbackRate || 1);
       await playAudio();
       setPlayer(prev => ({ ...prev, currentChunkIndex: index, isPlaying: true }));
       setIsLoadingChunk(false);
@@ -645,7 +685,10 @@ const App: React.FC = () => {
       startTime = episode.lastPosition.currentTime;
     }
 
-    setPlayer(prev => ({ ...prev, activeEpisode: episode, currentChunkIndex: startChunk, isPlaying: true }));
+    const episodeRate = episode.playbackRate || 1;
+    setRate(episodeRate);
+    setPlaybackRate(episodeRate);
+    setPlayer(prev => ({ ...prev, activeEpisode: episode, currentChunkIndex: startChunk, isPlaying: true, playbackRate: episodeRate }));
     await playChunk(episode, startChunk);
     
     if (startTime > 0) {
@@ -752,10 +795,30 @@ const App: React.FC = () => {
     setPlayer(prev => ({ ...prev, currentTime: (val / 100) * prev.duration }));
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList) as File[];
+  const applyPlaybackRate = (rate: number) => {
+    setRate(rate);
+    setPlaybackRate(rate);
+    setPlayer(prev => ({ ...prev, playbackRate: rate }));
+
+    if (player.activeEpisode) {
+      patchEpisode(player.activeEpisode.id, { playbackRate: rate });
+    }
+  };
+
+  const processImages = async (rawFiles: File[], clearSource: () => void) => {
+    if (rawFiles.length === 0) {
+      clearSource();
+      return;
+    }
+
+    const files = sortFilesForReading(rawFiles);
+    setImageQueue(files.map((file, index) => ({
+      id: `${file.name}-${file.lastModified}-${index}`,
+      label: file.name,
+      order: index + 1,
+      url: URL.createObjectURL(file)
+    })));
+
     setScanSession({
       startedAt: Date.now(),
       totalItems: files.length,
@@ -784,8 +847,24 @@ const App: React.FC = () => {
     } finally {
       setIsScanning(null);
       setScanSession(null);
-      e.target.value = '';
+      clearSource();
     }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await processImages(Array.from(fileList) as File[], () => {
+      e.target.value = '';
+    });
+  };
+
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await processImages(Array.from(fileList) as File[], () => {
+      e.target.value = '';
+    });
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -942,14 +1021,46 @@ const App: React.FC = () => {
           <button onClick={() => pdfInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
             {isScanning === "Läser PDF..." ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('pdf_btn')}
           </button>
+          <button onClick={() => cameraInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
+            {isScanning === "Läser bild 1 av 1..." ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
+          </button>
           <button onClick={() => fileInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
             {isScanning?.includes("bild") ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
+          <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
+          <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
           <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
           <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
           <label htmlFor="pdf-upload" className="sr-only">{t('pdf_btn')}</label>
           <input id="pdf-upload" name="pdf-upload" type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept="application/pdf" className="hidden" aria-label={t('pdf_btn')} />
         </div>
+
+        {imageQueue.length > 0 && (
+          <section className="rounded-[2rem] border border-indigo-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('image_order_title')}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{t('image_order_hint')}</p>
+              </div>
+              <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">{imageQueue.length}</span>
+            </div>
+
+            <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+              {imageQueue.map((image) => (
+                <div key={image.id} className="relative h-28 w-20 shrink-0 overflow-hidden rounded-2xl border border-gray-100 bg-gray-100 shadow-sm">
+                  <img src={image.url} alt={`${t('images_btn')} ${image.order}`} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/65 via-slate-900/10 to-transparent" />
+                  <span className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-indigo-600 shadow-sm">
+                    {image.order}
+                  </span>
+                  <span className="absolute bottom-2 left-2 right-2 truncate text-[9px] font-bold text-white/90">
+                    {image.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {activeStatus && (
           <section
@@ -1025,7 +1136,10 @@ const App: React.FC = () => {
             />
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button 
-                onClick={() => setInputText('')} 
+                onClick={() => {
+                  setInputText('');
+                  setImageQueue([]);
+                }} 
                 disabled={!inputText}
                 className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-red-500 flex items-center gap-2 active:scale-90 transition-all"
               >
@@ -1074,25 +1188,6 @@ const App: React.FC = () => {
                 {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
               </select>
             </div>
-          </div>
-
-          <div className="px-2 space-y-1">
-            <div className="flex justify-between items-center">
-              <label htmlFor="speed-slider" className="text-[10px] font-black uppercase text-gray-400">{t('speed_label')}</label>
-              <span className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{playbackRate}x</span>
-            </div>
-            <input 
-              id="speed-slider"
-              name="speed-slider"
-              type="range" min="0.4" max="2.0" step="0.1" 
-              value={playbackRate} 
-              onChange={(e) => {
-                const r = parseFloat(e.target.value);
-                setRate(r);
-                setPlaybackRate(r);
-              }}
-              className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-            />
           </div>
 
           <button onClick={handleGenerate} disabled={isGenerating || isGeneratingNotes || !inputText} className="w-full py-5 rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden">
@@ -1177,6 +1272,24 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-black tabular-nums text-indigo-600/80 tracking-tight">{formatTime(player.currentTime)}</span>
                 <span className="text-[10px] font-black tabular-nums text-gray-400/80 tracking-tight">-{formatTime(Math.max(0, player.duration - player.currentTime))}</span>
               </div>
+            </div>
+
+            <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
+              </div>
+              <input
+                id="player-speed-slider"
+                name="player-speed-slider"
+                type="range"
+                min="0.4"
+                max="2.0"
+                step="0.1"
+                value={playbackRate}
+                onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
+                className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
             </div>
 
             <div className="flex items-center justify-between">
