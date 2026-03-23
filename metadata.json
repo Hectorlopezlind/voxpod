@@ -1,0 +1,8 @@
+{
+  "name": "VoxPod - Your AI Podcast Player",
+  "description": "Transform text into professional podcast episodes with high-fidelity AI voices. Background playback supported.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
