@@ -3,6 +3,10 @@ import { PodcastEpisode } from "../types";
 
 let audioEl: HTMLAudioElement | null = null;
 let currentBlobUrl: string | null = null;
+let audioUnlocked = false;
+
+const SILENT_WAV_DATA_URL =
+  "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==";
 
 const writeString = (view: DataView, offset: number, string: string) => {
   for (let i = 0; i < string.length; i++) {
@@ -119,6 +123,27 @@ export const initAudioElement = () => {
     audioEl.setAttribute('webkit-playsinline', 'true');
   }
   return audioEl;
+};
+
+export const unlockAudioPlayback = async () => {
+  if (audioUnlocked) {
+    return true;
+  }
+
+  try {
+    const unlockEl = new Audio(SILENT_WAV_DATA_URL);
+    unlockEl.preload = 'auto';
+    unlockEl.muted = true;
+    unlockEl.setAttribute('playsinline', 'true');
+    unlockEl.setAttribute('webkit-playsinline', 'true');
+    await unlockEl.play();
+    unlockEl.pause();
+    unlockEl.currentTime = 0;
+    audioUnlocked = true;
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 export const loadAudioFromBuffer = (wavBuffer: ArrayBuffer) => {

@@ -14,7 +14,8 @@ import {
   decodeBase64ToUint8,
   setPlaybackRate,
   exportEpisodeAsMp3,
-  setMediaSessionPlaybackState
+  setMediaSessionPlaybackState,
+  unlockAudioPlayback
 } from './services/audioService';
 
 const PREMIUM_VOICES = [
@@ -237,6 +238,72 @@ const calculateChunkDurationSeconds = (pcmBytes: Uint8Array, sampleRate: number 
 
 const sumDurations = (durations: number[] = []) =>
   durations.reduce((total, value) => total + value, 0);
+
+const getEpisodeTimeline = (episode: PodcastEpisode) => {
+  const actualDurations = episode.chunkDurations ?? [];
+  const actualTotal = sumDurations(actualDurations);
+  const totalDuration = Math.max(episode.duration || 0, actualTotal);
+  const remainingChunks = Math.max(0, episode.chunkCount - actualDurations.length);
+  const estimatedChunkDuration = remainingChunks > 0
+    ? Math.max(1, (totalDuration - actualTotal) / remainingChunks)
+    : 0;
+
+  return Array.from({ length: episode.chunkCount }, (_, index) => actualDurations[index] ?? estimatedChunkDuration);
+};
+
+const getEpisodeDuration = (episode: PodcastEpisode) =>
+  Math.max(episode.duration || 0, sumDurations(episode.chunkDurations));
+
+const getEpisodeOffset = (episode: PodcastEpisode, chunkIndex: number) =>
+  getEpisodeTimeline(episode)
+    .slice(0, chunkIndex)
+    .reduce((total, value) => total + value, 0);
+
+const isEpisodeAtEnd = (episode: PodcastEpisode, chunkIndex: number, chunkTime: number) => {
+  const timeline = getEpisodeTimeline(episode);
+  if (timeline.length === 0) {
+    return false;
+  }
+
+  const safeChunkIndex = clamp(chunkIndex, 0, timeline.length - 1);
+  const chunkDuration = timeline[safeChunkIndex] ?? 0;
+  const overallTime = getEpisodeOffset(episode, safeChunkIndex) + Math.max(0, chunkTime);
+  const episodeDuration = getEpisodeDuration(episode);
+
+  return (
+    safeChunkIndex === timeline.length - 1 &&
+    (
+      overallTime >= Math.max(0, episodeDuration - 0.5) ||
+      (chunkDuration > 0 && chunkTime >= Math.max(0, chunkDuration - 0.5))
+    )
+  );
+};
+
+const locateChunkAtTime = (episode: PodcastEpisode, requestedTime: number) => {
+  const timeline = getEpisodeTimeline(episode);
+  const episodeDuration = timeline.reduce((total, value) => total + value, 0);
+  let remainingTime = clamp(requestedTime, 0, episodeDuration);
+
+  for (let index = 0; index < timeline.length; index++) {
+    const chunkDuration = timeline[index] ?? 0;
+    if (remainingTime <= chunkDuration || index === timeline.length - 1) {
+      return {
+        chunkIndex: index,
+        chunkTime: Math.max(0, Math.min(chunkDuration || remainingTime, remainingTime))
+      };
+    }
+    remainingTime -= chunkDuration;
+  }
+
+  return { chunkIndex: 0, chunkTime: 0 };
+};
+
+const formatTime = (seconds: number) => {
+  if (isNaN(seconds)) return "0:00";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 const readFileAsBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -484,45 +551,6 @@ const App: React.FC = () => {
     }
   });
 
-  const getEpisodeTimeline = (episode: PodcastEpisode) => {
-    const actualDurations = episode.chunkDurations ?? [];
-    const actualTotal = sumDurations(actualDurations);
-    const totalDuration = Math.max(episode.duration || 0, actualTotal);
-    const remainingChunks = Math.max(0, episode.chunkCount - actualDurations.length);
-    const estimatedChunkDuration = remainingChunks > 0
-      ? Math.max(1, (totalDuration - actualTotal) / remainingChunks)
-      : 0;
-
-    return Array.from({ length: episode.chunkCount }, (_, index) => actualDurations[index] ?? estimatedChunkDuration);
-  };
-
-  const getEpisodeDuration = (episode: PodcastEpisode) =>
-    Math.max(episode.duration || 0, sumDurations(episode.chunkDurations));
-
-  const getEpisodeOffset = (episode: PodcastEpisode, chunkIndex: number) =>
-    getEpisodeTimeline(episode)
-      .slice(0, chunkIndex)
-      .reduce((total, value) => total + value, 0);
-
-  const locateChunkAtTime = (episode: PodcastEpisode, requestedTime: number) => {
-    const timeline = getEpisodeTimeline(episode);
-    const episodeDuration = timeline.reduce((total, value) => total + value, 0);
-    let remainingTime = clamp(requestedTime, 0, episodeDuration);
-
-    for (let index = 0; index < timeline.length; index++) {
-      const chunkDuration = timeline[index] ?? 0;
-      if (remainingTime <= chunkDuration || index === timeline.length - 1) {
-        return {
-          chunkIndex: index,
-          chunkTime: Math.max(0, Math.min(chunkDuration || remainingTime, remainingTime))
-        };
-      }
-      remainingTime -= chunkDuration;
-    }
-
-    return { chunkIndex: 0, chunkTime: 0 };
-  };
-
   const applyChunkStartTime = async (timeInChunk: number) => {
     const el = initAudioElement();
     if (timeInChunk <= 0) {
@@ -614,6 +642,9 @@ const App: React.FC = () => {
       if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
         void playChunk(player.activeEpisode, player.currentChunkIndex + 1);
       } else {
+        if (player.activeEpisode) {
+          saveBookmark(player.activeEpisode.id, 0, 0);
+        }
         setPlayer(prev => ({ ...prev, isPlaying: false, currentTime: prev.duration }));
         setMediaSessionPlaybackState(false);
       }
@@ -622,13 +653,6 @@ const App: React.FC = () => {
 
     return () => el.removeEventListener('ended', handleEnd);
   }, [player.activeEpisode, player.currentChunkIndex]);
-
-  const formatTime = (seconds: number) => {
-    if (isNaN(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   const chunkText = (text: string) => {
     const paragraphs = text.split(/\n+/).filter(p => p.trim());
@@ -922,9 +946,15 @@ const App: React.FC = () => {
     let startTime = 0;
     
     if (index === 0 && episode.lastPosition) {
-      startChunk = episode.lastPosition.chunkIndex;
-      startTime = episode.lastPosition.currentTime;
+      if (isEpisodeAtEnd(episode, episode.lastPosition.chunkIndex, episode.lastPosition.currentTime)) {
+        patchEpisode(episode.id, { lastPosition: { chunkIndex: 0, currentTime: 0 } });
+      } else {
+        startChunk = episode.lastPosition.chunkIndex;
+        startTime = episode.lastPosition.currentTime;
+      }
     }
+
+    await unlockAudioPlayback();
 
     const episodeRate = episode.playbackRate || 1;
     setRate(episodeRate);
@@ -950,16 +980,43 @@ const App: React.FC = () => {
   const handleTogglePlay = async (force?: boolean) => {
     if (!player.activeEpisode) return;
     const shouldPlay = typeof force === 'boolean' ? force : !player.isPlaying;
+    const el = initAudioElement();
+    const liveCurrentTime = el.src
+      ? getEpisodeOffset(player.activeEpisode, player.currentChunkIndex) + (el.currentTime || 0)
+      : player.currentTime;
     
     if (shouldPlay) {
-      await playAudio();
+      const currentEpisode = player.activeEpisode;
+      const chunkOffset = getEpisodeOffset(currentEpisode, player.currentChunkIndex);
+      const chunkTime = Math.max(0, liveCurrentTime - chunkOffset);
+      const isAtEnd = isEpisodeAtEnd(currentEpisode, player.currentChunkIndex, chunkTime);
+
+      await unlockAudioPlayback();
+
+      if (isAtEnd) {
+        await jumpToEpisodeTime(currentEpisode, 0, true);
+        return;
+      }
+
+      try {
+        const el = initAudioElement();
+        if (!el.src) {
+          await playChunk(currentEpisode, player.currentChunkIndex, { autoplay: true, startTime: chunkTime });
+          return;
+        }
+
+        await playAudio();
+      } catch (err) {
+        console.error("Kunde inte återuppta uppspelningen", err);
+        await playChunk(currentEpisode, player.currentChunkIndex, { autoplay: true, startTime: chunkTime });
+        return;
+      }
     } else {
       pauseAudio();
-      const el = initAudioElement();
       saveBookmark(player.activeEpisode.id, player.currentChunkIndex, el.currentTime);
     }
     setMediaSessionPlaybackState(shouldPlay);
-    setPlayer(prev => ({ ...prev, isPlaying: shouldPlay }));
+    setPlayer(prev => ({ ...prev, isPlaying: shouldPlay, currentTime: liveCurrentTime }));
   };
 
   const saveBookmark = (episodeId: string, chunkIndex: number, currentTime: number) => {
@@ -1090,17 +1147,20 @@ const App: React.FC = () => {
     saveBookmark(episode.id, chunkIndex, chunkTime);
   };
 
-  const handleSeek = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSeek = async (value: number) => {
     if (!player.activeEpisode) return;
-    const val = parseFloat(e.target.value);
-    const targetTime = (val / 100) * getEpisodeDuration(player.activeEpisode);
+    const targetTime = (value / 100) * getEpisodeDuration(player.activeEpisode);
     await jumpToEpisodeTime(player.activeEpisode, targetTime);
   };
 
   const handleSkip = async (delta: number) => {
     if (!player.activeEpisode) return;
+    const el = initAudioElement();
+    const liveCurrentTime = el.src
+      ? getEpisodeOffset(player.activeEpisode, player.currentChunkIndex) + (el.currentTime || 0)
+      : player.currentTime;
     const targetTime = clamp(
-      player.currentTime + delta,
+      liveCurrentTime + delta,
       0,
       getEpisodeDuration(player.activeEpisode)
     );
@@ -1265,7 +1325,7 @@ const App: React.FC = () => {
   const resolvedModalNotes = normalizeEpisodeNotes(showNotesModal?.notes, userLang);
 
   return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
+    <div className="max-w-md w-full mx-auto min-h-screen flex flex-col bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
       <header className="p-6 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
         <div className="flex flex-col text-left">
           <h1 className="text-xl font-black text-indigo-600 tracking-tighter">VoxPod AI</h1>
@@ -1414,23 +1474,23 @@ const App: React.FC = () => {
 
         <section className="space-y-4">
           <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
-          <div className="grid gap-3">
+          <div className="grid gap-3 overflow-hidden">
             {library.map((ep) => (
-              <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`p-5 rounded-[2rem] border transition-all flex items-center gap-4 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white border-gray-100 shadow-sm'}`}>
-                <div className={`w-10 h-10 flex-shrink-0 rounded-2xl flex items-center justify-center font-bold ${player.activeEpisode?.id === ep.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+              <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`w-full min-w-0 p-4 rounded-[2rem] border transition-all flex items-center gap-3 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white border-gray-100 shadow-sm'}`}>
+                <div className={`w-10 h-10 shrink-0 rounded-2xl flex items-center justify-center font-bold ${player.activeEpisode?.id === ep.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
                   ✨
                 </div>
-                <div className="flex-1 truncate text-left">
+                <div className="min-w-0 flex-1 text-left">
                   <h3 className="text-sm font-black truncate">{ep.title}</h3>
                   <p className={`text-[9px] uppercase font-bold ${player.activeEpisode?.id === ep.id ? 'text-white/60' : 'text-gray-400'}`}>
                     {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex shrink-0 items-center gap-2">
                   {ep.notes && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); setShowNotesModal(ep); }}
-                      className={`w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                      className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
                       title={t('notes_title')}
                     >
                       📝
@@ -1439,14 +1499,14 @@ const App: React.FC = () => {
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(ep); }}
                     disabled={ep.generationStatus === 'processing'}
-                    className={`w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
                     title="Download MP3"
                   >
                     {isDownloading === ep.id || ep.generationStatus === 'processing'
                       ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
                       : '📥'}
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); void handleDeleteEpisode(ep); }} className="w-8 h-8 flex items-center justify-center rounded-xl opacity-30 hover:opacity-100 text-xl transition-opacity">×</button>
+                  <button onClick={(e) => { e.stopPropagation(); void handleDeleteEpisode(ep); }} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl opacity-30 hover:opacity-100 text-xl transition-opacity">×</button>
                 </div>
               </div>
             ))}
@@ -1464,8 +1524,6 @@ const App: React.FC = () => {
       {player.activeEpisode && (
         <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
           <div className="max-w-md mx-auto w-full flex flex-col gap-5">
-            
-            {/* --- PROGRESS BAR / SEEKER --- */}
             <div className="space-y-2 group">
               <div className="relative h-2 w-full bg-indigo-50 rounded-full overflow-hidden shadow-inner">
                 <div 
@@ -1480,7 +1538,7 @@ const App: React.FC = () => {
                   max="100" 
                   step="0.1"
                   value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
-                  onChange={handleSeek}
+                  onChange={(e) => { void handleSeek(parseFloat(e.target.value)); }}
                   aria-label="Playback position"
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
