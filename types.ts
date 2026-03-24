@@ -34,6 +34,9 @@ export interface PodcastEpisode {
   audioBlobId: string; // Base ID for chunks: {id}_0, {id}_1...
   chunkCount: number;
   duration: number;
+  chunkDurations?: number[];
+  readyChunkCount?: number;
+  generationStatus?: 'processing' | 'ready';
   playbackRate: number;
   lastPosition?: {
     chunkIndex: number;

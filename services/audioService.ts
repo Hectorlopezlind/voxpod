@@ -115,6 +115,8 @@ export const initAudioElement = () => {
   if (!audioEl) {
     audioEl = new Audio();
     audioEl.preload = 'auto';
+    audioEl.setAttribute('playsinline', 'true');
+    audioEl.setAttribute('webkit-playsinline', 'true');
   }
   return audioEl;
 };
@@ -175,6 +177,12 @@ export const setupMediaSession = (episode: PodcastEpisode, actions: { onPlay: ()
     navigator.mediaSession.setActionHandler('pause', actions.onPause);
     navigator.mediaSession.setActionHandler('seekbackward', () => actions.onSeek(-15));
     navigator.mediaSession.setActionHandler('seekforward', () => actions.onSeek(30));
+  }
+};
+
+export const setMediaSessionPlaybackState = (isPlaying: boolean) => {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
   }
 };
 

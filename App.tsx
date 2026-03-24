@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes } from './types';
-import { generateTTS, translateText, extractTextFromImage, extractTextFromPdf, generateNotes } from './services/geminiService';
+import { generateTTS, translateText, extractTextFromImage, extractTextFromPdf, generateNotes, GeminiRequestOptions } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix } from './services/dbService';
 import { 
   initAudioElement, 
@@ -9,13 +9,12 @@ import {
   playAudio, 
   pauseAudio, 
   stopAudio,
-  seekAudio, 
   setupMediaSession,
   pcmToWav,
   decodeBase64ToUint8,
   setPlaybackRate,
-  setPlaybackPosition,
-  exportEpisodeAsMp3
+  exportEpisodeAsMp3,
+  setMediaSessionPlaybackState
 } from './services/audioService';
 
 const PREMIUM_VOICES = [
@@ -77,9 +76,10 @@ const TRANSLATIONS: Record<string, any> = {
     translate_btn: '🌐 Translate',
     voice_label: 'Voice',
     speed_label: 'Speed',
-    generate_btn: 'Start Reading ✨',
-    generating_audio: 'Creating audio...',
-    generating_notes: 'Creating notes...',
+    generate_btn: 'Start Podcast ✨',
+    creating_podcast: 'Creating podcast',
+    loading_text: 'Loading text',
+    translating_short: 'Translating',
     progress_label: 'Progress',
     time_left: 'left',
     library_title: 'Library',
@@ -99,7 +99,9 @@ const TRANSLATIONS: Record<string, any> = {
     files_label: 'files',
     step_label: 'Step',
     image_order_title: 'Image order',
-    image_order_hint: 'The app reads images in this order.'
+    image_order_hint: 'The app reads images in this order.',
+    retrying: 'Retrying automatically',
+    waiting_for_network: 'Waiting for network'
   },
   sv: {
     app_subtitle: 'AI Podcast Streamer',
@@ -115,9 +117,10 @@ const TRANSLATIONS: Record<string, any> = {
     translate_btn: '🌐 Översätt',
     voice_label: 'Röst',
     speed_label: 'Hastighet',
-    generate_btn: 'Starta uppläsning ✨',
-    generating_audio: 'Skapar ljud...',
-    generating_notes: 'Skapar anteckningar...',
+    generate_btn: 'Starta podd ✨',
+    creating_podcast: 'Skapar podd',
+    loading_text: 'Laddar text',
+    translating_short: 'Översätter',
     progress_label: 'Framsteg',
     time_left: 'kvar',
     library_title: 'Bibliotek',
@@ -137,7 +140,9 @@ const TRANSLATIONS: Record<string, any> = {
     files_label: 'filer',
     step_label: 'Steg',
     image_order_title: 'Bildordning',
-    image_order_hint: 'Appen läser bilderna i den här ordningen.'
+    image_order_hint: 'Appen läser bilderna i den här ordningen.',
+    retrying: 'Försöker igen automatiskt',
+    waiting_for_network: 'Väntar på nätverk'
   }
 };
 
@@ -192,12 +197,10 @@ const imageNameCollator = new Intl.Collator(undefined, {
   sensitivity: 'base'
 });
 
-type QueuedImagePreview = {
-  id: string;
-  label: string;
-  order: number;
-  url: string;
-};
+const INITIAL_PLAYBACK_BUFFER = 2;
+const MAX_CHUNK_CHARACTERS = 1800;
+const AUDIO_SAMPLE_RATE = 24000;
+const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 
 const sortFilesForReading = (files: File[]) =>
   files
@@ -212,6 +215,39 @@ const sortFilesForReading = (files: File[]) =>
       return a.index - b.index;
     })
     .map(({ file }) => file);
+
+const sleep = (ms: number) =>
+  new Promise<void>(resolve => window.setTimeout(resolve, ms));
+
+const waitForNextPaint = () =>
+  new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+
+const formatStopwatch = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(safeSeconds / 60);
+  const secs = safeSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const estimateEpisodeDurationSeconds = (text: string) =>
+  clamp(Math.ceil(text.trim().length / ESTIMATED_CHARACTERS_PER_SECOND), 15, 60 * 60 * 6);
+
+const calculateChunkDurationSeconds = (pcmBytes: Uint8Array, sampleRate: number = AUDIO_SAMPLE_RATE) =>
+  pcmBytes.length / (sampleRate * 2);
+
+const sumDurations = (durations: number[] = []) =>
+  durations.reduce((total, value) => total + value, 0);
+
+const readFileAsBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = () => reject(reader.error ?? new Error('Kunde inte läsa filen.'));
+    reader.readAsDataURL(file);
+  });
+
+const splitParagraphIntoSentences = (paragraph: string) =>
+  paragraph.match(/[^.!?]+(?:[.!?]+|$)/g)?.map(part => part.trim()).filter(Boolean) ?? [paragraph.trim()];
 
 const NOTES_UI_LABELS = {
   en: {
@@ -314,23 +350,26 @@ const App: React.FC = () => {
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [isScanning, setIsScanning] = useState<string | null>(null);
+  const [scanSource, setScanSource] = useState<'pdf' | 'camera' | 'images' | null>(null);
   const [isLoadingChunk, setIsLoadingChunk] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [playerInset, setPlayerInset] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const langMenuRef = useRef<HTMLDivElement>(null);
+  const playerShellRef = useRef<HTMLDivElement>(null);
+  const playRequestRef = useRef(0);
   const [searchBuffer, setSearchBuffer] = useState('');
   const searchTimeoutRef = useRef<number | null>(null);
   const [uiClock, setUiClock] = useState(() => Date.now());
   const [scanSession, setScanSession] = useState<ScanSession | null>(null);
   const [translateSession, setTranslateSession] = useState<TranslateSession | null>(null);
   const [generationSession, setGenerationSession] = useState<GenerationSession | null>(null);
-  const [imageQueue, setImageQueue] = useState<QueuedImagePreview[]>([]);
 
   // Cache for pre-loaded chunks to prevent gaps
   const chunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
@@ -345,10 +384,33 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    return () => {
-      imageQueue.forEach(image => URL.revokeObjectURL(image.url));
+    const shell = playerShellRef.current;
+    if (!shell) {
+      setPlayerInset(0);
+      return;
+    }
+
+    const updateInset = () => {
+      setPlayerInset(shell.getBoundingClientRect().height);
     };
-  }, [imageQueue]);
+
+    updateInset();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateInset);
+      return () => {
+        window.removeEventListener('resize', updateInset);
+      };
+    }
+
+    const observer = new ResizeObserver(updateInset);
+    observer.observe(shell);
+    window.addEventListener('resize', updateInset);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateInset);
+    };
+  }, [player.activeEpisode]);
 
   // Handle click outside to close language menu
   useEffect(() => {
@@ -413,6 +475,74 @@ const App: React.FC = () => {
     localStorage.setItem('voxpod_input_notes', inputNotes);
   }, [inputNotes]);
 
+  const isBusy = isGenerating || isGeneratingNotes || isTranslating || scanSource !== null;
+  const contentBottomInset = player.activeEpisode ? playerInset + 80 : 32;
+
+  const makeRetryOptions = (): GeminiRequestOptions => ({
+    onRetry: ({ online }) => {
+      setRetryNotice(online ? t('retrying') : t('waiting_for_network'));
+    }
+  });
+
+  const getEpisodeTimeline = (episode: PodcastEpisode) => {
+    const actualDurations = episode.chunkDurations ?? [];
+    const actualTotal = sumDurations(actualDurations);
+    const totalDuration = Math.max(episode.duration || 0, actualTotal);
+    const remainingChunks = Math.max(0, episode.chunkCount - actualDurations.length);
+    const estimatedChunkDuration = remainingChunks > 0
+      ? Math.max(1, (totalDuration - actualTotal) / remainingChunks)
+      : 0;
+
+    return Array.from({ length: episode.chunkCount }, (_, index) => actualDurations[index] ?? estimatedChunkDuration);
+  };
+
+  const getEpisodeDuration = (episode: PodcastEpisode) =>
+    Math.max(episode.duration || 0, sumDurations(episode.chunkDurations));
+
+  const getEpisodeOffset = (episode: PodcastEpisode, chunkIndex: number) =>
+    getEpisodeTimeline(episode)
+      .slice(0, chunkIndex)
+      .reduce((total, value) => total + value, 0);
+
+  const locateChunkAtTime = (episode: PodcastEpisode, requestedTime: number) => {
+    const timeline = getEpisodeTimeline(episode);
+    const episodeDuration = timeline.reduce((total, value) => total + value, 0);
+    let remainingTime = clamp(requestedTime, 0, episodeDuration);
+
+    for (let index = 0; index < timeline.length; index++) {
+      const chunkDuration = timeline[index] ?? 0;
+      if (remainingTime <= chunkDuration || index === timeline.length - 1) {
+        return {
+          chunkIndex: index,
+          chunkTime: Math.max(0, Math.min(chunkDuration || remainingTime, remainingTime))
+        };
+      }
+      remainingTime -= chunkDuration;
+    }
+
+    return { chunkIndex: 0, chunkTime: 0 };
+  };
+
+  const applyChunkStartTime = async (timeInChunk: number) => {
+    const el = initAudioElement();
+    if (timeInChunk <= 0) {
+      el.currentTime = 0;
+      return;
+    }
+
+    if (el.readyState < 1) {
+      await new Promise<void>(resolve => {
+        const handleLoaded = () => {
+          resolve();
+        };
+
+        el.addEventListener('loadedmetadata', handleLoaded, { once: true });
+      });
+    }
+
+    el.currentTime = timeInChunk;
+  };
+
   useEffect(() => {
     if (!scanSession && !translateSession && !generationSession) return;
 
@@ -426,29 +556,36 @@ const App: React.FC = () => {
   // Sync player time with Audio element
   useEffect(() => {
     const el = initAudioElement();
+    const handlePlay = () => setMediaSessionPlaybackState(true);
+    const handlePause = () => setMediaSessionPlaybackState(false);
     
     const syncTime = () => {
-      setPlayer(prev => ({
-        ...prev,
-        currentTime: el.currentTime,
-        duration: (el.duration && isFinite(el.duration)) ? el.duration : prev.duration
-      }));
+      setPlayer(prev => {
+        if (!prev.activeEpisode) {
+          return prev;
+        }
+
+        const offset = getEpisodeOffset(prev.activeEpisode, prev.currentChunkIndex);
+        return {
+          ...prev,
+          currentTime: offset + (el.currentTime || 0),
+          duration: getEpisodeDuration(prev.activeEpisode)
+        };
+      });
     };
 
     el.addEventListener('timeupdate', syncTime);
     el.addEventListener('durationchange', syncTime);
     el.addEventListener('loadedmetadata', syncTime);
-    el.addEventListener('play', syncTime);
-    el.addEventListener('pause', syncTime);
+    el.addEventListener('play', handlePlay);
+    el.addEventListener('pause', handlePause);
 
     const interval = setInterval(() => {
       if (!el.paused) {
         syncTime();
-        // Robustness check: if we are very close to the end and it's not paused, 
-        // but the ended event hasn't fired yet, we might need to nudge it.
         if (el.currentTime > 0 && el.duration > 0 && el.currentTime >= el.duration - 0.2) {
           if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
-            playChunk(player.activeEpisode, player.currentChunkIndex + 1);
+            void playChunk(player.activeEpisode, player.currentChunkIndex + 1);
           }
         }
       }
@@ -458,28 +595,31 @@ const App: React.FC = () => {
       el.removeEventListener('timeupdate', syncTime);
       el.removeEventListener('durationchange', syncTime);
       el.removeEventListener('loadedmetadata', syncTime);
-      el.removeEventListener('play', syncTime);
-      el.removeEventListener('pause', syncTime);
+      el.removeEventListener('play', handlePlay);
+      el.removeEventListener('pause', handlePause);
       clearInterval(interval);
     };
   }, [player.activeEpisode, player.currentChunkIndex]);
 
   useEffect(() => {
-    const el = initAudioElement();
-    const handleEnd = () => {
-      if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
-        playChunk(player.activeEpisode, player.currentChunkIndex + 1);
-      } else {
-        setPlayer(prev => ({ ...prev, isPlaying: false }));
-      }
-    };
-    el.addEventListener('ended', handleEnd);
-    
     const saved = localStorage.getItem('voxpod_library');
     if (saved) {
       try { setLibrary(JSON.parse(saved)); } catch(e) { console.error(e); }
     }
-    
+  }, []);
+
+  useEffect(() => {
+    const el = initAudioElement();
+    const handleEnd = () => {
+      if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
+        void playChunk(player.activeEpisode, player.currentChunkIndex + 1);
+      } else {
+        setPlayer(prev => ({ ...prev, isPlaying: false, currentTime: prev.duration }));
+        setMediaSessionPlaybackState(false);
+      }
+    };
+    el.addEventListener('ended', handleEnd);
+
     return () => el.removeEventListener('ended', handleEnd);
   }, [player.activeEpisode, player.currentChunkIndex]);
 
@@ -493,124 +633,180 @@ const App: React.FC = () => {
   const chunkText = (text: string) => {
     const paragraphs = text.split(/\n+/).filter(p => p.trim());
     const chunks: string[] = [];
-    let currentChunk = "";
-    for (const p of paragraphs) {
-      if ((currentChunk + p).length > 1200 && currentChunk) {
+    let currentChunk = '';
+
+    const pushCurrentChunk = () => {
+      if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
-        currentChunk = p;
-      } else {
-        currentChunk += (currentChunk ? "\n\n" : "") + p;
+        currentChunk = '';
+      }
+    };
+
+    for (const paragraph of paragraphs) {
+      if (paragraph.length <= MAX_CHUNK_CHARACTERS) {
+        const candidate = currentChunk ? `${currentChunk}\n\n${paragraph}` : paragraph;
+        if (candidate.length > MAX_CHUNK_CHARACTERS && currentChunk) {
+          pushCurrentChunk();
+          currentChunk = paragraph;
+        } else {
+          currentChunk = candidate;
+        }
+        continue;
+      }
+
+      for (const sentence of splitParagraphIntoSentences(paragraph)) {
+        const candidate = currentChunk ? `${currentChunk} ${sentence}` : sentence;
+        if (candidate.length > MAX_CHUNK_CHARACTERS && currentChunk) {
+          pushCurrentChunk();
+        }
+
+        if (sentence.length > MAX_CHUNK_CHARACTERS) {
+          for (let index = 0; index < sentence.length; index += MAX_CHUNK_CHARACTERS) {
+            const part = sentence.slice(index, index + MAX_CHUNK_CHARACTERS).trim();
+            if (part) {
+              chunks.push(part);
+            }
+          }
+          currentChunk = '';
+        } else {
+          currentChunk = currentChunk ? `${currentChunk} ${sentence}` : sentence;
+        }
       }
     }
-    if (currentChunk) chunks.push(currentChunk.trim());
+
+    pushCurrentChunk();
     return chunks;
   };
 
+  const buildChunkAudio = async (textChunk: string) => {
+    setRetryNotice(null);
+    const base64 = await generateTTS(textChunk, selectedVoice as VoiceName, undefined, makeRetryOptions());
+    setRetryNotice(null);
+    const pcmBytes = decodeBase64ToUint8(base64);
+
+    return {
+      wavBuffer: pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE),
+      duration: calculateChunkDurationSeconds(pcmBytes, AUDIO_SAMPLE_RATE)
+    };
+  };
+
   const handleGenerate = async () => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isBusy) return;
     setIsGenerating(true);
     setError(null);
+    setRetryNotice(null);
 
     try {
       const id = crypto.randomUUID();
       const chunks = chunkText(inputText);
+      if (chunks.length === 0) return;
+
       const title = inputText.trim().split('\n')[0].substring(0, 40) || 'Ny Produktion';
       const shouldGenerateNotes = inputText.trim().length > 0;
-      
-      setGenerationProgress({ current: 0, total: chunks.length });
+      const totalSteps = chunks.length + (shouldGenerateNotes ? 1 : 0);
+      const estimatedDuration = estimateEpisodeDurationSeconds(inputText);
+      const initialBufferSize = Math.min(INITIAL_PLAYBACK_BUFFER, chunks.length);
+      const generatedDurations: number[] = [];
+
+      setGenerationProgress({ current: 0, total: totalSteps });
       setGenerationSession({
         startedAt: Date.now(),
         estimatedSeconds: estimateGenerationSeconds(chunks.length, shouldGenerateNotes),
-        totalSteps: chunks.length + (shouldGenerateNotes ? 1 : 0),
+        totalSteps,
         notesIncluded: shouldGenerateNotes,
         notesCompleted: !shouldGenerateNotes
       });
 
+      for (let index = 0; index < initialBufferSize; index++) {
+        const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
+        await saveAudioBlob(`${id}_${index}`, wavBuffer);
+        chunkCache.current.set(`${id}_${index}`, wavBuffer);
+        generatedDurations[index] = duration;
+        setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
+      }
+
       const newEpisode: PodcastEpisode = {
-        id, title, text: inputText, date: Date.now(),
-        voice: selectedVoice, audioBlobId: id, 
-        chunkCount: chunks.length, duration: 0,
+        id,
+        title,
+        text: inputText,
+        date: Date.now(),
+        voice: selectedVoice,
+        audioBlobId: id,
+        chunkCount: chunks.length,
+        readyChunkCount: initialBufferSize,
+        generationStatus: chunks.length === initialBufferSize && !shouldGenerateNotes ? 'ready' : 'processing',
+        chunkDurations: [...generatedDurations],
+        duration: estimatedDuration,
         playbackRate: 1
       };
-
-      const firstChunkBase64 = await generateTTS(chunks[0], selectedVoice as VoiceName);
-      const pcmBytes = decodeBase64ToUint8(firstChunkBase64);
-      const wavBuffer = pcmToWav(pcmBytes, 24000);
-      await saveAudioBlob(`${id}_0`, wavBuffer);
-      setGenerationProgress(prev => ({ ...prev, current: 1 }));
-      handlePlayEpisode(newEpisode, 0);
-      let successfulChunkCount = 1;
 
       setLibrary(prev => {
         const updated = [newEpisode, ...prev];
         localStorage.setItem('voxpod_library', JSON.stringify(updated));
         return updated;
       });
+      await handlePlayEpisode(newEpisode, 0);
 
-      for (let i = 1; i < chunks.length; i++) {
-        let chunkStored = false;
-        try {
-          const base64 = await generateTTS(chunks[i], selectedVoice as VoiceName);
-          const pcm = decodeBase64ToUint8(base64);
-          const wav = pcmToWav(pcm, 24000);
-          await saveAudioBlob(`${id}_${i}`, wav);
-          chunkStored = true;
-        } catch (e) { 
-          console.error(`Fel vid generering av chunk ${i}`, e);
-          try {
-            await new Promise(r => setTimeout(r, 2000));
-            const base64 = await generateTTS(chunks[i], selectedVoice as VoiceName);
-            const pcm = decodeBase64ToUint8(base64);
-            const wav = pcmToWav(pcm, 24000);
-            await saveAudioBlob(`${id}_${i}`, wav);
-            chunkStored = true;
-          } catch (e2) {
-            console.error(`Retry misslyckades för chunk ${i}`, e2);
-          }
-        }
-
-        if (!chunkStored) {
-          break;
-        }
-
-        successfulChunkCount += 1;
-        setGenerationProgress(prev => ({ ...prev, current: successfulChunkCount }));
+      for (let index = initialBufferSize; index < chunks.length; index++) {
+        const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
+        await saveAudioBlob(`${id}_${index}`, wavBuffer);
+        chunkCache.current.set(`${id}_${index}`, wavBuffer);
+        generatedDurations[index] = duration;
+        patchEpisode(id, {
+          readyChunkCount: index + 1,
+          chunkDurations: [...generatedDurations]
+        });
+        setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
       }
 
-      if (successfulChunkCount !== chunks.length) {
-        patchEpisode(id, { chunkCount: successfulChunkCount });
-        setError("Podden skapades delvis. En ljuddel kunde inte genereras.");
-      }
+      patchEpisode(id, {
+        readyChunkCount: chunks.length,
+        generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
+        chunkDurations: [...generatedDurations],
+        duration: sumDurations(generatedDurations)
+      });
 
       if (shouldGenerateNotes) {
         setIsGeneratingNotes(true);
         try {
-          const generatedNotes = await generateNotes(inputText);
+          const generatedNotes = await generateNotes(inputText, makeRetryOptions());
+          setRetryNotice(null);
           patchEpisode(id, {
-            notes: mergeGeneratedAndPersonalNotes(generatedNotes, inputNotes, userLang)
+            notes: mergeGeneratedAndPersonalNotes(generatedNotes, inputNotes, userLang),
+            generationStatus: 'ready',
+            duration: sumDurations(generatedDurations)
           });
+          setGenerationProgress({ current: totalSteps, total: totalSteps });
         } catch (e) {
           console.error("Kunde inte generera anteckningar", e);
           const personalNotesOnly = normalizeEpisodeNotes(inputNotes, userLang);
           if (personalNotesOnly) {
-            patchEpisode(id, { notes: personalNotesOnly });
+            patchEpisode(id, { notes: personalNotesOnly, generationStatus: 'ready' });
+          } else {
+            patchEpisode(id, { generationStatus: 'ready' });
           }
           setError("Podden skapades, men anteckningarna kunde inte genereras.");
         } finally {
           setIsGeneratingNotes(false);
           setGenerationSession(prev => prev ? { ...prev, notesCompleted: true } : prev);
         }
+      } else {
+        setGenerationProgress({ current: totalSteps, total: totalSteps });
       }
-    } catch (err: any) { setError("Kunde inte starta podden."); }
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error && err.message ? err.message : "Kunde inte starta podden.");
+    }
     finally {
       setIsGenerating(false);
       setIsGeneratingNotes(false);
       setGenerationSession(null);
+      setRetryNotice(null);
     }
   };
 
   const handleDownloadEpisode = async (episode: PodcastEpisode) => {
-    if (isDownloading) return;
+    if (isDownloading || episode.generationStatus === 'processing') return;
     setIsDownloading(episode.id);
     try {
       const buffers: ArrayBuffer[] = [];
@@ -631,52 +827,97 @@ const App: React.FC = () => {
     finally { setIsDownloading(null); }
   };
 
-  const playChunk = async (episode: PodcastEpisode, index: number) => {
-    try {
-      setIsLoadingChunk(true);
-      const cacheKey = `${episode.audioBlobId}_${index}`;
+  const waitForChunkData = async (episode: PodcastEpisode, index: number, requestId: number) => {
+    const cacheKey = `${episode.audioBlobId}_${index}`;
+
+    while (requestId === playRequestRef.current) {
       let data = chunkCache.current.get(cacheKey);
-      
       if (!data) {
         data = await getAudioBlob(cacheKey);
       }
 
-      if (!data) {
-        // If not found, wait and retry (maybe it's still generating)
-        console.log(`Chunk ${index} inte klar än, väntar...`);
-        setTimeout(() => playChunk(episode, index), 1000);
+      if (data) {
+        chunkCache.current.set(cacheKey, data);
+        return data;
+      }
+
+      await sleep(800);
+    }
+
+    return null;
+  };
+
+  const playChunk = async (
+    episode: PodcastEpisode,
+    index: number,
+    options?: { autoplay?: boolean; startTime?: number }
+  ) => {
+    const requestId = ++playRequestRef.current;
+    const autoplay = options?.autoplay ?? true;
+    const startTime = options?.startTime ?? 0;
+
+    try {
+      setIsLoadingChunk(true);
+      const data = await waitForChunkData(episode, index, requestId);
+      if (!data || requestId !== playRequestRef.current) {
         return;
       }
 
       loadAudioFromBuffer(data);
-      setPlaybackRate(episode.playbackRate || 1);
-      await playAudio();
-      setPlayer(prev => ({ ...prev, currentChunkIndex: index, isPlaying: true }));
-      setIsLoadingChunk(false);
-      
-      // Pre-load next chunk
+      await applyChunkStartTime(startTime);
+
+      const episodeRate = episode.playbackRate || 1;
+      setPlaybackRate(episodeRate);
+
+      if (autoplay) {
+        await playAudio();
+      } else {
+        pauseAudio();
+      }
+
+      if (requestId !== playRequestRef.current) {
+        return;
+      }
+
+      const overallTime = getEpisodeOffset(episode, index) + startTime;
+      setPlayer(prev => {
+        const activeEpisode = prev.activeEpisode?.id === episode.id ? { ...episode, ...prev.activeEpisode } : episode;
+        return {
+          ...prev,
+          activeEpisode,
+          currentChunkIndex: index,
+          currentTime: overallTime,
+          duration: getEpisodeDuration(activeEpisode),
+          playbackRate: episodeRate,
+          isPlaying: autoplay
+        };
+      });
+      setMediaSessionPlaybackState(autoplay);
+
       const nextIndex = index + 1;
       if (nextIndex < episode.chunkCount) {
         const nextKey = `${episode.audioBlobId}_${nextIndex}`;
         if (!chunkCache.current.has(nextKey)) {
-          getAudioBlob(nextKey).then(nextData => {
+          void getAudioBlob(nextKey).then(nextData => {
             if (nextData) chunkCache.current.set(nextKey, nextData);
           });
         }
       }
-      
-      // Clear old cache entries
+
       if (index > 1) {
         chunkCache.current.delete(`${episode.audioBlobId}_${index - 2}`);
       }
     } catch (e) { 
       console.error("Fel vid uppspelning av chunk", e);
       setError("Fel vid uppspelning."); 
+    } finally {
+      if (requestId === playRequestRef.current) {
+        setIsLoadingChunk(false);
+      }
     }
   };
 
   const handlePlayEpisode = async (episode: PodcastEpisode, index: number = 0) => {
-    // If we're starting a new episode and it has a bookmark, use it
     let startChunk = index;
     let startTime = 0;
     
@@ -688,18 +929,21 @@ const App: React.FC = () => {
     const episodeRate = episode.playbackRate || 1;
     setRate(episodeRate);
     setPlaybackRate(episodeRate);
-    setPlayer(prev => ({ ...prev, activeEpisode: episode, currentChunkIndex: startChunk, isPlaying: true, playbackRate: episodeRate }));
-    await playChunk(episode, startChunk);
-    
-    if (startTime > 0) {
-      const el = initAudioElement();
-      el.currentTime = startTime;
-    }
+    setPlayer(prev => ({
+      ...prev,
+      activeEpisode: episode,
+      currentChunkIndex: startChunk,
+      currentTime: getEpisodeOffset(episode, startChunk) + startTime,
+      duration: getEpisodeDuration(episode),
+      isPlaying: true,
+      playbackRate: episodeRate
+    }));
+    await playChunk(episode, startChunk, { autoplay: true, startTime });
 
     setupMediaSession(episode, {
-      onPlay: () => handleTogglePlay(true),
-      onPause: () => handleTogglePlay(false),
-      onSeek: (delta) => seekAudio(delta)
+      onPlay: () => { void handleTogglePlay(true); },
+      onPause: () => { void handleTogglePlay(false); },
+      onSeek: (delta) => { void handleSkip(delta); }
     });
   };
 
@@ -711,10 +955,10 @@ const App: React.FC = () => {
       await playAudio();
     } else {
       pauseAudio();
-      // Save bookmark when pausing
       const el = initAudioElement();
       saveBookmark(player.activeEpisode.id, player.currentChunkIndex, el.currentTime);
     }
+    setMediaSessionPlaybackState(shouldPlay);
     setPlayer(prev => ({ ...prev, isPlaying: shouldPlay }));
   };
 
@@ -732,7 +976,40 @@ const App: React.FC = () => {
       localStorage.setItem('voxpod_library', JSON.stringify(updated));
       return updated;
     });
+
+    setPlayer(prev => {
+      if (prev.activeEpisode?.id !== episodeId) return prev;
+      return {
+        ...prev,
+        activeEpisode: {
+          ...prev.activeEpisode,
+          lastPosition: { chunkIndex, currentTime }
+        }
+      };
+    });
   };
+
+  useEffect(() => {
+    const persistBookmark = () => {
+      if (!player.activeEpisode) return;
+      const el = initAudioElement();
+      saveBookmark(player.activeEpisode.id, player.currentChunkIndex, el.currentTime);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        persistBookmark();
+      }
+    };
+
+    window.addEventListener('pagehide', persistBookmark);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pagehide', persistBookmark);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [player.activeEpisode, player.currentChunkIndex]);
 
   const patchEpisode = (episodeId: string, patch: Partial<PodcastEpisode>) => {
     setLibrary(prev => {
@@ -764,7 +1041,9 @@ const App: React.FC = () => {
       });
 
       if (player.activeEpisode?.id === episode.id) {
+        playRequestRef.current += 1;
         stopAudio();
+        setMediaSessionPlaybackState(false);
         setPlayer(prev => ({
           ...prev,
           isPlaying: false,
@@ -789,10 +1068,43 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const jumpToEpisodeTime = async (episode: PodcastEpisode, targetTime: number, autoplay: boolean = player.isPlaying) => {
+    const { chunkIndex, chunkTime } = locateChunkAtTime(episode, targetTime);
+    const currentEpisodeId = player.activeEpisode?.id;
+
+    if (currentEpisodeId === episode.id && chunkIndex === player.currentChunkIndex) {
+      const el = initAudioElement();
+      el.currentTime = chunkTime;
+      if (autoplay && el.paused) {
+        await playAudio();
+      }
+      if (!autoplay && !el.paused) {
+        pauseAudio();
+      }
+      setMediaSessionPlaybackState(autoplay);
+      setPlayer(prev => ({ ...prev, currentTime: targetTime, isPlaying: autoplay }));
+    } else {
+      await playChunk(episode, chunkIndex, { autoplay, startTime: chunkTime });
+    }
+
+    saveBookmark(episode.id, chunkIndex, chunkTime);
+  };
+
+  const handleSeek = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!player.activeEpisode) return;
     const val = parseFloat(e.target.value);
-    setPlaybackPosition(val);
-    setPlayer(prev => ({ ...prev, currentTime: (val / 100) * prev.duration }));
+    const targetTime = (val / 100) * getEpisodeDuration(player.activeEpisode);
+    await jumpToEpisodeTime(player.activeEpisode, targetTime);
+  };
+
+  const handleSkip = async (delta: number) => {
+    if (!player.activeEpisode) return;
+    const targetTime = clamp(
+      player.currentTime + delta,
+      0,
+      getEpisodeDuration(player.activeEpisode)
+    );
+    await jumpToEpisodeTime(player.activeEpisode, targetTime);
   };
 
   const applyPlaybackRate = (rate: number) => {
@@ -805,19 +1117,19 @@ const App: React.FC = () => {
     }
   };
 
-  const processImages = async (rawFiles: File[], clearSource: () => void) => {
+  const processImages = async (
+    rawFiles: File[],
+    clearSource: () => void,
+    source: 'camera' | 'images'
+  ) => {
     if (rawFiles.length === 0) {
       clearSource();
       return;
     }
 
     const files = sortFilesForReading(rawFiles);
-    setImageQueue(files.map((file, index) => ({
-      id: `${file.name}-${file.lastModified}-${index}`,
-      label: file.name,
-      order: index + 1,
-      url: URL.createObjectURL(file)
-    })));
+    setScanSource(source);
+    setRetryNotice(null);
 
     setScanSession({
       startedAt: Date.now(),
@@ -825,28 +1137,27 @@ const App: React.FC = () => {
       completedItems: 0,
       estimatedSeconds: estimateImageScanSeconds(files.length)
     });
+    await waitForNextPaint();
 
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        setIsScanning(`Läser bild ${i + 1} av ${files.length}...`);
         try {
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve((reader.result as string).split(',')[1]);
-            reader.onerror = () => reject(reader.error ?? new Error('Kunde inte läsa bildfilen.'));
-            reader.readAsDataURL(file);
-          });
-          const extracted = await extractTextFromImage(base64, file.type);
+          const base64 = await readFileAsBase64(file);
+          const extracted = await extractTextFromImage(base64, file.type, makeRetryOptions());
+          setRetryNotice(null);
           setInputText(prev => prev ? `${prev}\n\n${extracted}` : extracted);
-        } catch (err) { 
-          setError(`Bild ${i + 1} misslyckades.`); 
+        } catch (err) {
+          throw new Error(`Bild ${i + 1} misslyckades.`);
         }
         setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
       }
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "Bildläsning misslyckades.");
     } finally {
-      setIsScanning(null);
+      setScanSource(null);
       setScanSession(null);
+      setRetryNotice(null);
       clearSource();
     }
   };
@@ -856,7 +1167,7 @@ const App: React.FC = () => {
     if (!fileList || fileList.length === 0) return;
     await processImages(Array.from(fileList) as File[], () => {
       e.target.value = '';
-    });
+    }, 'images');
   };
 
   const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -864,135 +1175,88 @@ const App: React.FC = () => {
     if (!fileList || fileList.length === 0) return;
     await processImages(Array.from(fileList) as File[], () => {
       e.target.value = '';
-    });
+    }, 'camera');
   };
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsScanning("Läser PDF...");
+    setScanSource('pdf');
+    setRetryNotice(null);
     setScanSession({
       startedAt: Date.now(),
       totalItems: 1,
       completedItems: 0,
       estimatedSeconds: estimatePdfScanSeconds(file.size)
     });
+    await waitForNextPaint();
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = () => reject(reader.error ?? new Error('Kunde inte läsa PDF-filen.'));
-        reader.readAsDataURL(file);
-      });
-      const extracted = await extractTextFromPdf(base64);
+      const base64 = await readFileAsBase64(file);
+      const extracted = await extractTextFromPdf(base64, makeRetryOptions());
+      setRetryNotice(null);
       setInputText(prev => prev ? `${prev}\n\n${extracted}` : extracted);
       setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : "PDF-läsning misslyckades.");
     } finally {
-      setIsScanning(null);
+      setScanSource(null);
       setScanSession(null);
+      setRetryNotice(null);
       e.target.value = '';
     }
   };
 
   const handleTranslate = async (lang: string) => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isBusy) return;
     setIsTranslating(true);
     setShowLangMenu(false);
+    setRetryNotice(null);
     setTranslateSession({
       startedAt: Date.now(),
       estimatedSeconds: estimateTranslationSeconds(inputText.length),
       targetLanguage: lang
     });
     try {
-      const translated = await translateText(inputText, lang);
+      const translated = await translateText(inputText, lang, makeRetryOptions());
+      setRetryNotice(null);
       setInputText(translated);
-    } catch (err) { setError("Översättning misslyckades."); }
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "Översättning misslyckades.");
+    }
     finally {
       setIsTranslating(false);
       setTranslateSession(null);
+      setRetryNotice(null);
     }
   };
 
-  const activeStatus = (() => {
-    if (generationSession) {
-      const elapsedSeconds = Math.floor((uiClock - generationSession.startedAt) / 1000);
-      const completedSteps = generationProgress.current + (generationSession.notesIncluded && generationSession.notesCompleted ? 1 : 0);
-      const pendingSteps = Math.max(0, generationSession.totalSteps - completedSteps);
-      const remainingSeconds = Math.max(
-        pendingSteps > 0 ? 1 : 0,
-        Math.ceil(generationSession.estimatedSeconds - elapsedSeconds),
-        pendingSteps * 4
-      );
-      const progress = generationSession.totalSteps > 0
-        ? Math.min(
-            0.98,
-            Math.max(
-              completedSteps / generationSession.totalSteps,
-              Math.min(0.92, elapsedSeconds / generationSession.estimatedSeconds)
-            )
-          )
-        : 0;
-
-      const isNotesStepActive = isGeneratingNotes && !generationSession.notesCompleted;
-      const currentStep = isNotesStepActive
-        ? generationSession.totalSteps
-        : Math.max(1, completedSteps);
-
+  const activePrimaryButton = (() => {
+    if (generationSession && (isGenerating || isGeneratingNotes)) {
       return {
-        title: isNotesStepActive ? t('generating_notes') : t('generating_audio'),
-        detail: `${t('step_label')} ${currentStep} ${t('of_label')} ${generationSession.totalSteps}`,
-        badge: generationSession.notesIncluded && !generationSession.notesCompleted
-          ? t('notes_title')
-          : `${generationProgress.current}/${generationProgress.total || 1}`,
-        progress,
-        remainingSeconds,
-        eyebrow: t('countdown_label')
+        label: t('creating_podcast'),
+        elapsedSeconds: Math.floor((uiClock - generationSession.startedAt) / 1000),
+        progress: generationProgress.total > 0
+          ? Math.max(0.08, generationProgress.current / generationProgress.total)
+          : 0.08
       };
     }
 
     if (isTranslating && translateSession) {
-      const elapsedSeconds = Math.floor((uiClock - translateSession.startedAt) / 1000);
-      const remainingSeconds = Math.max(1, Math.ceil(translateSession.estimatedSeconds - elapsedSeconds));
-      const progress = Math.min(0.96, Math.max(0.1, elapsedSeconds / translateSession.estimatedSeconds));
-
       return {
-        title: t('translating'),
-        detail: `${t('target_label')}: ${translateSession.targetLanguage}`,
-        badge: formatCountdown(remainingSeconds),
-        progress,
-        remainingSeconds,
-        eyebrow: t('countdown_label')
+        label: t('translating_short'),
+        elapsedSeconds: Math.floor((uiClock - translateSession.startedAt) / 1000),
+        progress: Math.min(0.94, Math.max(0.12, (uiClock - translateSession.startedAt) / 1000 / translateSession.estimatedSeconds))
       };
     }
 
-    if (isScanning && scanSession) {
-      const elapsedSeconds = Math.floor((uiClock - scanSession.startedAt) / 1000);
-      const pendingItems = Math.max(0, scanSession.totalItems - scanSession.completedItems);
-      const remainingSeconds = Math.max(
-        pendingItems > 0 ? 1 : 0,
-        Math.ceil(scanSession.estimatedSeconds - elapsedSeconds),
-        pendingItems * 5
-      );
-      const progress = scanSession.totalItems > 0
-        ? Math.min(
-            0.98,
-            Math.max(
-              scanSession.completedItems / scanSession.totalItems,
-              Math.min(0.9, elapsedSeconds / scanSession.estimatedSeconds)
-            )
-          )
-        : 0;
-
+    if (scanSource && scanSession) {
       return {
-        title: isScanning,
-        detail: `${scanSession.completedItems}/${scanSession.totalItems} ${t('files_label')}`,
-        badge: scanSession.totalItems > 1 ? `${scanSession.totalItems} ${t('files_label')}` : '1 PDF',
-        progress,
-        remainingSeconds,
-        eyebrow: t('countdown_label')
+        label: t('loading_text'),
+        elapsedSeconds: Math.floor((uiClock - scanSession.startedAt) / 1000),
+        progress: scanSession.totalItems > 0
+          ? Math.max(0.08, scanSession.completedItems / scanSession.totalItems)
+          : 0.08
       };
     }
 
@@ -1001,7 +1265,7 @@ const App: React.FC = () => {
   const resolvedModalNotes = normalizeEpisodeNotes(showNotesModal?.notes, userLang);
 
   return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col bg-gray-50 pb-56 font-sans text-gray-900 overflow-x-hidden">
+    <div className="max-w-md mx-auto min-h-screen flex flex-col bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
       <header className="p-6 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
         <div className="flex flex-col text-left">
           <h1 className="text-xl font-black text-indigo-600 tracking-tighter">VoxPod AI</h1>
@@ -1009,7 +1273,13 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="p-5 space-y-6">
+      <main
+        className="p-5 space-y-6"
+        style={{
+          paddingBottom: `${contentBottomInset}px`,
+          scrollPaddingBottom: `${contentBottomInset}px`
+        }}
+      >
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex justify-between items-center">
             <span>{error}</span>
@@ -1018,14 +1288,14 @@ const App: React.FC = () => {
         )}
 
         <div className="flex gap-2">
-          <button onClick={() => pdfInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
-            {isScanning === "Läser PDF..." ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('pdf_btn')}
+          <button onClick={() => pdfInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+            {scanSource === 'pdf' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('pdf_btn')}
           </button>
-          <button onClick={() => cameraInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
-            {isScanning === "Läser bild 1 av 1..." ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
+          <button onClick={() => cameraInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+            {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={!!isScanning} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all">
-            {isScanning?.includes("bild") ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
+          <button onClick={() => fileInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+            {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
           <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
           <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
@@ -1034,86 +1304,6 @@ const App: React.FC = () => {
           <label htmlFor="pdf-upload" className="sr-only">{t('pdf_btn')}</label>
           <input id="pdf-upload" name="pdf-upload" type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept="application/pdf" className="hidden" aria-label={t('pdf_btn')} />
         </div>
-
-        {imageQueue.length > 0 && (
-          <section className="rounded-[2rem] border border-indigo-100 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('image_order_title')}</p>
-                <p className="mt-1 text-[11px] text-slate-500">{t('image_order_hint')}</p>
-              </div>
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">{imageQueue.length}</span>
-            </div>
-
-            <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
-              {imageQueue.map((image) => (
-                <div key={image.id} className="relative h-28 w-20 shrink-0 overflow-hidden rounded-2xl border border-gray-100 bg-gray-100 shadow-sm">
-                  <img src={image.url} alt={`${t('images_btn')} ${image.order}`} className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/65 via-slate-900/10 to-transparent" />
-                  <span className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-indigo-600 shadow-sm">
-                    {image.order}
-                  </span>
-                  <span className="absolute bottom-2 left-2 right-2 truncate text-[9px] font-bold text-white/90">
-                    {image.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {activeStatus && (
-          <section
-            className="relative overflow-hidden rounded-[2rem] border border-indigo-100 p-5 shadow-[0_20px_45px_-25px_rgba(79,70,229,0.45)]"
-            style={{ background: 'linear-gradient(135deg, rgba(238,242,255,1) 0%, rgba(255,255,255,1) 58%, rgba(224,242,254,1) 100%)' }}
-          >
-            <div className="absolute -top-8 right-0 h-24 w-24 rounded-full bg-indigo-200/50 blur-2xl" />
-            <div className="absolute -bottom-10 left-10 h-24 w-24 rounded-full bg-sky-200/60 blur-2xl" />
-
-            <div className="relative flex items-center gap-4">
-              <div className="flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-[1.75rem] border border-white/70 bg-white/80 text-center shadow-lg shadow-indigo-100/80 backdrop-blur">
-                <span className="text-[26px] font-black tracking-tight text-indigo-600">{Math.max(1, activeStatus.remainingSeconds)}</span>
-                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-400">{t('sec_left')}</span>
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-3 text-left">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-black uppercase tracking-[0.28em] text-indigo-500/80">{activeStatus.eyebrow}</p>
-                    <h2 className="mt-1 text-sm font-black text-slate-900">{activeStatus.title}</h2>
-                    <p className="mt-1 text-[11px] font-medium text-slate-500">{activeStatus.detail}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-indigo-100 bg-white/80 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-indigo-600 shadow-sm">
-                    {activeStatus.badge}
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide">
-                    <span className="text-slate-400">{t('progress_label')}</span>
-                    <span className="text-indigo-600">{Math.round(activeStatus.progress * 100)}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/80 shadow-inner">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-sky-400 via-indigo-500 to-violet-500 transition-all duration-700"
-                      style={{ width: `${Math.max(10, activeStatus.progress * 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] font-semibold">
-                  <span className="text-slate-500">
-                    {activeStatus.remainingSeconds <= 2
-                      ? t('almost_done')
-                      : `${t('est_time')} ${formatCountdown(activeStatus.remainingSeconds)}`}
-                  </span>
-                  <span className="text-indigo-600">{formatCountdown(activeStatus.remainingSeconds)}</span>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
         <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
           <div className="relative">
             <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
@@ -1122,8 +1312,9 @@ const App: React.FC = () => {
               name="podcast-text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              disabled={isBusy}
               placeholder={t('placeholder_text')}
-              className="w-full h-32 p-5 bg-gray-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100"
+              className="w-full h-32 p-5 bg-gray-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100 disabled:text-gray-400"
             />
             <label htmlFor="personal-notes" className="sr-only">{t('placeholder_notes')}</label>
             <textarea
@@ -1131,30 +1322,30 @@ const App: React.FC = () => {
               name="personal-notes"
               value={inputNotes}
               onChange={(e) => setInputNotes(e.target.value)}
+              disabled={isBusy}
               placeholder={t('placeholder_notes')}
-              className="w-full h-20 p-5 bg-gray-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all"
+              className="w-full h-20 p-5 bg-gray-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all disabled:text-gray-400"
             />
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button 
                 onClick={() => {
                   setInputText('');
-                  setImageQueue([]);
                 }} 
-                disabled={!inputText}
-                className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-red-500 flex items-center gap-2 active:scale-90 transition-all"
+                disabled={!inputText || isBusy}
+                className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-red-500 flex items-center gap-2 active:scale-90 transition-all disabled:text-gray-300"
               >
                 {t('clear_btn')}
               </button>
               <div className="relative">
                 <button 
                   onClick={() => setShowLangMenu(!showLangMenu)} 
-                  disabled={isTranslating || !inputText} 
+                  disabled={isBusy || !inputText} 
                   className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-indigo-600 flex items-center gap-2 active:scale-90 transition-all"
                 >
                   {isTranslating ? (
                     <span className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></span>
-                      {t('translating')}
+                      {t('translating_short')}
                     </span>
                   ) : t('translate_btn')}
                 </button>
@@ -1184,22 +1375,39 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1">
               <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
-              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer">
+              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isBusy} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
                 {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
               </select>
             </div>
           </div>
 
-          <button onClick={handleGenerate} disabled={isGenerating || isGeneratingNotes || !inputText} className="w-full py-5 rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden">
-            <div className="relative z-10">
-              {isGenerating ? t('generating_audio') : isGeneratingNotes ? t('generating_notes') : t('generate_btn')}
-            </div>
-            {isGenerating && (
+          <button onClick={handleGenerate} disabled={isBusy || !inputText.trim()} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
+            {activePrimaryButton && (
               <div 
-                className="absolute inset-0 bg-indigo-500 transition-all duration-500" 
-                style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
+                className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-500" 
+                style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
               />
             )}
+            <div className="relative z-10">
+              {activePrimaryButton ? (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                      {activePrimaryButton.label}
+                    </span>
+                    <span className="tabular-nums">{formatStopwatch(activePrimaryButton.elapsedSeconds)}</span>
+                  </div>
+                  {retryNotice && (
+                    <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
+                      {retryNotice}
+                    </div>
+                  )}
+                </>
+              ) : (
+                t('generate_btn')
+              )}
+            </div>
           </button>
 
         </section>
@@ -1214,7 +1422,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex-1 truncate text-left">
                   <h3 className="text-sm font-black truncate">{ep.title}</h3>
-                  <p className={`text-[9px] uppercase font-bold ${player.activeEpisode?.id === ep.id ? 'text-white/60' : 'text-gray-400'}`}>{t('ai_voice_mode')}</p>
+                  <p className={`text-[9px] uppercase font-bold ${player.activeEpisode?.id === ep.id ? 'text-white/60' : 'text-gray-400'}`}>
+                    {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {ep.notes && (
@@ -1228,10 +1438,13 @@ const App: React.FC = () => {
                   )}
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(ep); }}
-                    className={`w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                    disabled={ep.generationStatus === 'processing'}
+                    className={`w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
                     title="Download MP3"
                   >
-                    {isDownloading === ep.id ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : '📥'}
+                    {isDownloading === ep.id || ep.generationStatus === 'processing'
+                      ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                      : '📥'}
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); void handleDeleteEpisode(ep); }} className="w-8 h-8 flex items-center justify-center rounded-xl opacity-30 hover:opacity-100 text-xl transition-opacity">×</button>
                 </div>
@@ -1242,10 +1455,14 @@ const App: React.FC = () => {
             )}
           </div>
         </section>
+
+        {player.activeEpisode && (
+          <div aria-hidden="true" style={{ height: `${contentBottomInset}px` }} />
+        )}
       </main>
 
       {player.activeEpisode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-10 z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
+        <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
           <div className="max-w-md mx-auto w-full flex flex-col gap-5">
             
             {/* --- PROGRESS BAR / SEEKER --- */}
@@ -1297,20 +1514,20 @@ const App: React.FC = () => {
                 <h4 className="text-[13px] font-black truncate text-gray-800 tracking-tight leading-tight">{player.activeEpisode.title}</h4>
                 <div className="flex items-center gap-2.5 mt-0.5">
                   <span className="text-[8px] font-black uppercase text-indigo-500/70 tracking-widest">{t('ai_voice_mode')}</span>
-                  {player.activeEpisode.chunkCount > 1 && (
+                  {player.activeEpisode.generationStatus === 'processing' && (
                     <span className="text-[8px] bg-indigo-50/50 text-indigo-600/70 px-2 py-0.5 rounded-full font-black border border-indigo-100/50">
-                      {t('part_label')} {player.currentChunkIndex + 1} {t('of_label')} {player.activeEpisode.chunkCount}
+                      {t('creating_podcast')}
                     </span>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-5">
-                <button onClick={() => seekAudio(-15)} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                <button onClick={() => { void handleSkip(-15); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
                   <span className="text-lg">↺</span>
                   <span className="mt-[-4px]">15</span>
                 </button>
                 <button 
-                  onClick={() => handleTogglePlay()} 
+                  onClick={() => { void handleTogglePlay(); }} 
                   className="w-14 h-14 bg-indigo-600 text-white rounded-[1.75rem] flex items-center justify-center text-xl shadow-[0_10px_25px_-5px_rgba(79,70,229,0.4)] active:scale-95 transition-all relative hover:bg-indigo-700"
                 >
                   {isLoadingChunk ? (
@@ -1319,7 +1536,7 @@ const App: React.FC = () => {
                     player.isPlaying ? '❚❚' : '▶'
                   )}
                 </button>
-                <button onClick={() => seekAudio(30)} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                <button onClick={() => { void handleSkip(30); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
                   <span className="text-lg">↻</span>
                   <span className="mt-[-4px]">30</span>
                 </button>
