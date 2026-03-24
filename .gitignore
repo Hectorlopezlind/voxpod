@@ -27,3 +27,6 @@ migrated_prompt_history/
 *.njsproj
 *.sln
 *.sw?
+
+.dev.vars*
+!.dev.vars.example
