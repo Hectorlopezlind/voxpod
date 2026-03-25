@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
 import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
-import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix } from './services/dbService';
+import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
 import { 
   initAudioElement, 
   loadAudioFromBuffer, 
@@ -64,7 +64,7 @@ const LANGUAGES = [
 
 const EN_TRANSLATIONS = {
   app_subtitle: 'AI Podcast Streamer',
-  pdf_btn: '📄 PDF',
+  docs_btn: '📄 DOCS',
   camera_btn: '📸 Camera',
   images_btn: '📷 IMAGES',
   scanning_pdf: 'Reading PDF...',
@@ -119,7 +119,7 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
   en: EN_TRANSLATIONS,
   sv: {
     app_subtitle: 'AI Podcast Streamer',
-    pdf_btn: '📄 PDF',
+    docs_btn: '📄 DOK',
     camera_btn: '📸 Kamera',
     images_btn: '📷 BILDER',
     scanning_pdf: 'Läser PDF...',
@@ -191,7 +191,7 @@ type GenerationSession = {
 
 type LibraryUpdater = (currentLibrary: PodcastEpisode[]) => PodcastEpisode[];
 
-type ImportSource = 'pdf' | 'camera' | 'images';
+type ImportSource = 'document' | 'camera' | 'images';
 
 type ImportSessionState = {
   id: string;
@@ -247,13 +247,17 @@ const MAX_NOTES_SOURCE_CHARACTERS = 12000;
 const MAX_SUMMARY_AUDIO_CHARACTERS = 1200;
 const MAX_SUMMARY_AUDIO_BULLETS = 4;
 const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
-const IMPORT_STREAM_FLUSH_CHARACTERS = 140;
+const LIVE_GENERATION_EARLY_START_CHARACTERS = 900;
+const IMPORT_STREAM_FLUSH_CHARACTERS = 80;
+const IMPORT_TEXT_CACHE_VERSION = 1;
 const LIBRARY_STORAGE_KEY = 'voxpod_library';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
 const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
+const TEXT_DOCUMENT_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
+const DOCUMENT_UPLOAD_ACCEPT = 'application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown';
 
 const sortFilesForReading = (files: File[]) =>
   files
@@ -364,6 +368,60 @@ const readFileAsBase64 = (file: File) =>
     reader.onerror = () => reject(reader.error ?? new Error('Kunde inte läsa filen.'));
     reader.readAsDataURL(file);
   });
+
+const getFileExtension = (fileName: string) => {
+  const parts = fileName.toLowerCase().split('.');
+  return parts.length > 1 ? parts.pop() ?? '' : '';
+};
+
+const isTextDocumentFile = (file: File) => {
+  const extension = getFileExtension(file.name);
+  return file.type.startsWith('text/') || TEXT_DOCUMENT_EXTENSIONS.has(extension);
+};
+
+const estimateDocumentScanSeconds = (file: File) =>
+  isTextDocumentFile(file)
+    ? clamp(Math.ceil(file.size / 250_000), 2, 8)
+    : estimatePdfScanSeconds(file.size);
+
+const buildImportCacheKey = (file: File) =>
+  [
+    'import-text',
+    IMPORT_TEXT_CACHE_VERSION,
+    file.name,
+    file.size,
+    file.lastModified,
+    file.type || 'unknown'
+  ].join(':');
+
+const streamLocalTextFile = async (
+  file: File,
+  onChunk: (textChunk: string) => void
+) => {
+  if (typeof file.stream === 'function') {
+    const reader = file.stream().getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { value, done } = await reader.read();
+      const textChunk = decoder.decode(value, { stream: !done });
+      if (textChunk) {
+        onChunk(textChunk);
+      }
+      if (done) {
+        break;
+      }
+    }
+
+    const trailingText = decoder.decode();
+    if (trailingText) {
+      onChunk(trailingText);
+    }
+    return;
+  }
+
+  onChunk(await file.text());
+};
 
 const splitParagraphIntoSentences = (paragraph: string) =>
   paragraph.match(/[^.!?]+(?:[.!?]+|$)/g)?.map(part => part.trim()).filter(Boolean) ?? [paragraph.trim()];
@@ -619,6 +677,27 @@ const buildEpisodeSummaryPlaybackText = (
   return truncateText(summaryText, MAX_SUMMARY_AUDIO_CHARACTERS);
 };
 
+const getRequiredLiveReadyChunks = (
+  allChunks: string[],
+  finalizedCount: number,
+  isComplete: boolean
+) => {
+  if (isComplete) {
+    return Math.max(1, Math.min(LIVE_GENERATION_MIN_READY_CHUNKS, finalizedCount));
+  }
+
+  if (finalizedCount >= LIVE_GENERATION_MIN_READY_CHUNKS) {
+    return LIVE_GENERATION_MIN_READY_CHUNKS;
+  }
+
+  const firstChunkLength = allChunks[0]?.length ?? 0;
+  if (finalizedCount >= 1 && firstChunkLength >= LIVE_GENERATION_EARLY_START_CHARACTERS) {
+    return 1;
+  }
+
+  return LIVE_GENERATION_MIN_READY_CHUNKS;
+};
+
 const App: React.FC = () => {
   const [userLang] = useState<SupportedLanguage>(() => {
     const navLang = navigator.language.split('-')[0];
@@ -637,7 +716,7 @@ const App: React.FC = () => {
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [scanSource, setScanSource] = useState<'pdf' | 'camera' | 'images' | null>(null);
+  const [scanSource, setScanSource] = useState<'document' | 'camera' | 'images' | null>(null);
   const [isLoadingChunk, setIsLoadingChunk] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
@@ -648,7 +727,7 @@ const App: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
   const playRequestRef = useRef(0);
@@ -824,6 +903,25 @@ const App: React.FC = () => {
       setRetryNotice(online ? t('retrying') : t('waiting_for_network'));
     }
   });
+
+  const readImportTextCache = async (file: File) => {
+    try {
+      return await getImportTextCache(buildImportCacheKey(file));
+    } catch (error) {
+      console.warn('Kunde inte läsa importcache', error);
+      return null;
+    }
+  };
+
+  const writeImportTextCache = async (file: File, text: string) => {
+    if (!text.trim()) return;
+
+    try {
+      await saveImportTextCache(buildImportCacheKey(file), text);
+    } catch (error) {
+      console.warn('Kunde inte skriva importcache', error);
+    }
+  };
 
   const persistLibrarySnapshot = (episodes: PodcastEpisode[]) => {
     localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(episodes));
@@ -1187,9 +1285,7 @@ const App: React.FC = () => {
 
         const { allChunks, finalizedCount, projectedChunkCount } = getImportChunkWindow(trimmedText, source.isComplete);
         const shouldGenerateNotes = trimmedText.length > 0;
-        const requiredInitialReady = source.isComplete
-          ? Math.max(1, Math.min(LIVE_GENERATION_MIN_READY_CHUNKS, finalizedCount))
-          : LIVE_GENERATION_MIN_READY_CHUNKS;
+        const requiredInitialReady = getRequiredLiveReadyChunks(allChunks, finalizedCount, source.isComplete);
 
         syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
 
@@ -1997,12 +2093,25 @@ const App: React.FC = () => {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-          const base64 = await readFileAsBase64(file);
-          await streamIntoImportSession(importSession.id, async (onChunk) => {
-            await streamTextFromImage(base64, file.type, onChunk);
-          }, {
-            suffix: i < files.length - 1 ? '\n\n' : '',
-          });
+          const cachedText = await readImportTextCache(file);
+          if (cachedText?.trim()) {
+            appendImportSessionText(importSession.id, cachedText);
+            if (i < files.length - 1) {
+              appendImportSessionText(importSession.id, '\n\n');
+            }
+          } else {
+            const base64 = await readFileAsBase64(file);
+            let extractedText = '';
+            await streamIntoImportSession(importSession.id, async (onChunk) => {
+              await streamTextFromImage(base64, file.type, (textChunk) => {
+                extractedText += textChunk;
+                onChunk(textChunk);
+              });
+            }, {
+              suffix: i < files.length - 1 ? '\n\n' : '',
+            });
+            await writeImportTextCache(file, extractedText);
+          }
           setRetryNotice(null);
         } catch (err) {
           throw new Error(`Bild ${i + 1} misslyckades.`);
@@ -2036,29 +2145,48 @@ const App: React.FC = () => {
     }, 'camera');
   };
 
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const importSession = startImportSession('pdf');
-    setScanSource('pdf');
+    const importSession = startImportSession('document');
+    setScanSource('document');
     setRetryNotice(null);
     setScanSession({
       startedAt: Date.now(),
       totalItems: 1,
       completedItems: 0,
-      estimatedSeconds: estimatePdfScanSeconds(file.size)
+      estimatedSeconds: estimateDocumentScanSeconds(file)
     });
     await waitForNextPaint();
     try {
-      const base64 = await readFileAsBase64(file);
-      await streamIntoImportSession(importSession.id, async (onChunk) => {
-        await streamTextFromPdf(base64, onChunk);
-      });
+      const cachedText = await readImportTextCache(file);
+      if (cachedText?.trim()) {
+        replaceImportSessionText(importSession.id, cachedText);
+      } else if (isTextDocumentFile(file)) {
+        let extractedText = '';
+        await streamIntoImportSession(importSession.id, async (onChunk) => {
+          await streamLocalTextFile(file, (textChunk) => {
+            extractedText += textChunk;
+            onChunk(textChunk);
+          });
+        });
+        await writeImportTextCache(file, extractedText);
+      } else {
+        const base64 = await readFileAsBase64(file);
+        let extractedText = '';
+        await streamIntoImportSession(importSession.id, async (onChunk) => {
+          await streamTextFromPdf(base64, (textChunk) => {
+            extractedText += textChunk;
+            onChunk(textChunk);
+          });
+        });
+        await writeImportTextCache(file, extractedText);
+      }
       setRetryNotice(null);
       setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "PDF-läsning misslyckades.");
+      setError(err instanceof Error && err.message ? err.message : "Dokumentläsning misslyckades.");
     } finally {
       completeImportSession(importSession.id);
       setScanSource(null);
@@ -2094,33 +2222,33 @@ const App: React.FC = () => {
 
   const activePrimaryButton = (() => {
     if (generationSession && (isGenerating || isGeneratingNotes)) {
-      const elapsedSeconds = Math.floor((uiClock - generationSession.startedAt) / 1000);
+      const progress = generationProgress.total > 0
+        ? Math.max(0.08, generationProgress.current / generationProgress.total)
+        : 0.08;
       return {
         label: t('creating_podcast'),
-        remainingSeconds: Math.max(0, generationSession.estimatedSeconds - elapsedSeconds),
-        progress: generationProgress.total > 0
-          ? Math.max(0.08, generationProgress.current / generationProgress.total)
-          : 0.08
+        remainingSeconds: Math.max(0, generationSession.estimatedSeconds * (1 - progress)),
+        progress,
       };
     }
 
     if (isTranslating && translateSession) {
-      const elapsedSeconds = Math.floor((uiClock - translateSession.startedAt) / 1000);
+      const progress = Math.min(0.94, Math.max(0.12, (uiClock - translateSession.startedAt) / 1000 / translateSession.estimatedSeconds));
       return {
         label: t('translating_short'),
-        remainingSeconds: Math.max(0, translateSession.estimatedSeconds - elapsedSeconds),
-        progress: Math.min(0.94, Math.max(0.12, (uiClock - translateSession.startedAt) / 1000 / translateSession.estimatedSeconds))
+        remainingSeconds: Math.max(0, translateSession.estimatedSeconds * (1 - progress)),
+        progress,
       };
     }
 
     if (scanSource && scanSession) {
-      const elapsedSeconds = Math.floor((uiClock - scanSession.startedAt) / 1000);
+      const progress = scanSession.totalItems > 0
+        ? Math.max(0.08, scanSession.completedItems / scanSession.totalItems)
+        : 0.08;
       return {
         label: t('loading_text'),
-        remainingSeconds: Math.max(0, scanSession.estimatedSeconds - elapsedSeconds),
-        progress: scanSession.totalItems > 0
-          ? Math.max(0.08, scanSession.completedItems / scanSession.totalItems)
-          : 0.08
+        remainingSeconds: Math.max(0, scanSession.estimatedSeconds * (1 - progress)),
+        progress,
       };
     }
 
@@ -2137,8 +2265,8 @@ const App: React.FC = () => {
   const activeImportSession = importSessionRef.current;
   const canGenerateFromImportSession = (() => {
     if (!isScanning || !activeImportSession?.text.trim()) return false;
-    const { finalizedCount } = getImportChunkWindow(activeImportSession.text.trim(), activeImportSession.isComplete);
-    return activeImportSession.isComplete ? finalizedCount > 0 : finalizedCount >= LIVE_GENERATION_MIN_READY_CHUNKS;
+    const { allChunks, finalizedCount } = getImportChunkWindow(activeImportSession.text.trim(), activeImportSession.isComplete);
+    return finalizedCount >= getRequiredLiveReadyChunks(allChunks, finalizedCount, activeImportSession.isComplete);
   })();
   const isInputLocked = isBusy || isScanning;
   const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
@@ -2167,8 +2295,8 @@ const App: React.FC = () => {
         )}
 
         <div className="flex gap-2">
-          <button onClick={() => pdfInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
-            {scanSource === 'pdf' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('pdf_btn')}
+          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+            {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
           </button>
           <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
             {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
@@ -2180,8 +2308,8 @@ const App: React.FC = () => {
           <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
           <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
           <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
-          <label htmlFor="pdf-upload" className="sr-only">{t('pdf_btn')}</label>
-          <input id="pdf-upload" name="pdf-upload" type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept="application/pdf" className="hidden" aria-label={t('pdf_btn')} />
+          <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
+          <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} className="hidden" aria-label={t('docs_btn')} />
         </div>
         <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
           <div className="relative">
