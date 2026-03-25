@@ -200,6 +200,7 @@ const imageNameCollator = new Intl.Collator(undefined, {
 
 const INITIAL_PLAYBACK_BUFFER = 2;
 const MAX_CHUNK_CHARACTERS = 1800;
+const MAX_NOTES_SOURCE_CHARACTERS = 12000;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 
@@ -321,13 +322,17 @@ const NOTES_UI_LABELS = {
     title: 'Notes',
     summary: 'Summary',
     personal: 'Your notes',
-    highlights: 'Highlights'
+    highlights: 'Highlights',
+    keyPoints: 'Key points',
+    details: 'Details'
   },
   sv: {
     title: 'Anteckningar',
     summary: 'Sammanfattning',
     personal: 'Dina anteckningar',
-    highlights: 'Höjdpunkter'
+    highlights: 'Höjdpunkter',
+    keyPoints: 'Nyckelpunkter',
+    details: 'Detaljer'
   }
 } as const;
 
@@ -397,6 +402,135 @@ const mergeGeneratedAndPersonalNotes = (
       }
     ]
   };
+};
+
+const normalizeInlineText = (value: string) =>
+  value.replace(/\s+/g, ' ').trim();
+
+const truncateText = (value: string, maxLength: number) => {
+  const normalized = normalizeInlineText(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const truncated = normalized.slice(0, maxLength).trim();
+  const lastSpace = truncated.lastIndexOf(' ');
+  return `${(lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated).trim()}…`;
+};
+
+const finalizeNoteBullet = (value: string) => {
+  let bullet = normalizeInlineText(cleanBulletText(value));
+  if (!bullet) return '';
+  if (!/[.!?]$/.test(bullet)) {
+    bullet = `${bullet}.`;
+  }
+  return bullet;
+};
+
+const getNotesLabels = (userLang: string) =>
+  NOTES_UI_LABELS[userLang as keyof typeof NOTES_UI_LABELS] ?? NOTES_UI_LABELS.en;
+
+const collectNoteBullets = (text: string) => {
+  const bullets = text
+    .split(/\n+/)
+    .flatMap(paragraph => splitParagraphIntoSentences(paragraph))
+    .map(finalizeNoteBullet)
+    .filter(bullet => bullet.length >= 18);
+
+  return Array.from(new Set(bullets));
+};
+
+const buildNotesSourceText = (text: string) => {
+  const trimmed = text.trim();
+  if (trimmed.length <= MAX_NOTES_SOURCE_CHARACTERS) {
+    return trimmed;
+  }
+
+  const head = trimmed.slice(0, 8500).trim();
+  const tail = trimmed.slice(-2500).trim();
+  return `${head}\n\n[...]\n\n${tail}`;
+};
+
+const buildFallbackEpisodeNotes = (
+  text: string,
+  personalNotes: string,
+  userLang: string
+): EpisodeNotes => {
+  const labels = getNotesLabels(userLang);
+  const firstLine = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean) ?? labels.title;
+  const bullets = collectNoteBullets(text);
+  const summarySource = bullets.slice(0, 2).join(' ') || text;
+  const summary = truncateText(summarySource, 260) || labels.summary;
+  const sections = [
+    {
+      heading: labels.keyPoints,
+      bullets: bullets.slice(0, 4)
+    },
+    {
+      heading: labels.details,
+      bullets: bullets.slice(4, 8)
+    }
+  ].filter(section => section.bullets.length > 0);
+
+  const fallback: EpisodeNotes = {
+    title: truncateText(firstLine, 70) || labels.title,
+    summary,
+    sections: sections.length > 0 ? sections : [
+      {
+        heading: labels.highlights,
+        bullets: [summary]
+      }
+    ]
+  };
+
+  return mergeGeneratedAndPersonalNotes(fallback, personalNotes, userLang);
+};
+
+const polishEpisodeNotes = (
+  notes: EpisodeNotes | null | undefined,
+  sourceText: string,
+  personalNotes: string,
+  userLang: string
+): EpisodeNotes => {
+  const labels = getNotesLabels(userLang);
+  const fallback = buildFallbackEpisodeNotes(sourceText, '', userLang);
+  const fallbackHeadings = [labels.keyPoints, labels.details, labels.highlights];
+
+  if (!notes) {
+    return mergeGeneratedAndPersonalNotes(fallback, personalNotes, userLang);
+  }
+
+  const sections = notes.sections
+    .map((section, index) => {
+      const bullets = section.bullets
+        .map(finalizeNoteBullet)
+        .filter(Boolean)
+        .slice(0, 4);
+      const heading = normalizeInlineText(section.heading);
+      const isGenericHeading = /^(section|sektion|rubrik)\b/i.test(heading);
+
+      if (bullets.length === 0) {
+        return null;
+      }
+
+      return {
+        heading: heading && !isGenericHeading ? truncateText(heading, 40) : fallbackHeadings[index] ?? labels.highlights,
+        bullets
+      };
+    })
+    .filter((section): section is EpisodeNotes['sections'][number] => Boolean(section))
+    .slice(0, 4);
+
+  const polished: EpisodeNotes = {
+    title: truncateText(notes.title || fallback.title, 70) || fallback.title,
+    summary: truncateText(notes.summary || fallback.summary, 280) || fallback.summary,
+    sections: sections.length > 0 ? sections : fallback.sections
+  };
+
+  return mergeGeneratedAndPersonalNotes(polished, personalNotes, userLang);
 };
 
 const App: React.FC = () => {
@@ -727,6 +861,8 @@ const App: React.FC = () => {
 
       const title = inputText.trim().split('\n')[0].substring(0, 40) || 'Ny Produktion';
       const shouldGenerateNotes = inputText.trim().length > 0;
+      const notesSourceText = buildNotesSourceText(inputText);
+      const fallbackNotes = buildFallbackEpisodeNotes(inputText, inputNotes, userLang);
       const totalSteps = chunks.length + (shouldGenerateNotes ? 1 : 0);
       const estimatedDuration = estimateEpisodeDurationSeconds(inputText);
       const initialBufferSize = Math.min(INITIAL_PLAYBACK_BUFFER, chunks.length);
@@ -761,6 +897,7 @@ const App: React.FC = () => {
         generationStatus: chunks.length === initialBufferSize && !shouldGenerateNotes ? 'ready' : 'processing',
         chunkDurations: [...generatedDurations],
         duration: estimatedDuration,
+        notes: fallbackNotes,
         playbackRate: 1
       };
 
@@ -793,23 +930,22 @@ const App: React.FC = () => {
       if (shouldGenerateNotes) {
         setIsGeneratingNotes(true);
         try {
-          const generatedNotes = await generateNotes(inputText, makeRetryOptions());
+          const generatedNotes = await generateNotes(notesSourceText, makeRetryOptions());
           setRetryNotice(null);
           patchEpisode(id, {
-            notes: mergeGeneratedAndPersonalNotes(generatedNotes, inputNotes, userLang),
+            notes: polishEpisodeNotes(generatedNotes, inputText, inputNotes, userLang),
             generationStatus: 'ready',
             duration: sumDurations(generatedDurations)
           });
           setGenerationProgress({ current: totalSteps, total: totalSteps });
         } catch (e) {
           console.error("Kunde inte generera anteckningar", e);
-          const personalNotesOnly = normalizeEpisodeNotes(inputNotes, userLang);
-          if (personalNotesOnly) {
-            patchEpisode(id, { notes: personalNotesOnly, generationStatus: 'ready' });
-          } else {
-            patchEpisode(id, { generationStatus: 'ready' });
-          }
-          setError("Podden skapades, men anteckningarna kunde inte genereras.");
+          patchEpisode(id, {
+            notes: fallbackNotes,
+            generationStatus: 'ready',
+            duration: sumDurations(generatedDurations)
+          });
+          setError("AI-anteckningarna kunde inte genereras, så snygga anteckningar skapades lokalt i stället.");
         } finally {
           setIsGeneratingNotes(false);
           setGenerationSession(prev => prev ? { ...prev, notesCompleted: true } : prev);
