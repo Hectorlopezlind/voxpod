@@ -36,6 +36,8 @@ type GeminiAction =
   | "translate"
   | "extractImage"
   | "extractPdf"
+  | "extractImageStream"
+  | "extractPdfStream"
   | "generateNotes";
 
 type GeminiRequestBody =
@@ -43,12 +45,16 @@ type GeminiRequestBody =
   | { action: "translate"; text: string; targetLanguage: string }
   | { action: "extractImage"; base64Data: string; mimeType: string }
   | { action: "extractPdf"; base64Data: string }
+  | { action: "extractImageStream"; base64Data: string; mimeType: string }
+  | { action: "extractPdfStream"; base64Data: string }
   | { action: "generateNotes"; text: string };
 
 type TtsBody = Extract<GeminiRequestBody, { action: "tts" }>;
 type TranslateBody = Extract<GeminiRequestBody, { action: "translate" }>;
 type ExtractImageBody = Extract<GeminiRequestBody, { action: "extractImage" }>;
 type ExtractPdfBody = Extract<GeminiRequestBody, { action: "extractPdf" }>;
+type ExtractImageStreamBody = Extract<GeminiRequestBody, { action: "extractImageStream" }>;
+type ExtractPdfStreamBody = Extract<GeminiRequestBody, { action: "extractPdfStream" }>;
 type GenerateNotesBody = Extract<GeminiRequestBody, { action: "generateNotes" }>;
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -56,6 +62,11 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const json = (body: unknown, status: number = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+
+const STREAM_HEADERS = {
+  "content-type": "application/x-ndjson; charset=utf-8",
+  "cache-control": "no-cache, no-transform",
+};
 
 const getApiKey = (apiKeyOverride?: string | null) => {
   const apiKey = apiKeyOverride ?? process.env.GEMINI_API_KEY;
@@ -286,6 +297,56 @@ const handleExtractImage = async (body: ExtractImageBody, options?: GeminiHandle
   return json({ text: response.text || "" });
 };
 
+const streamGeminiText = async (
+  requestFactory: (ai: GoogleGenAI) => Promise<AsyncIterable<{ text?: string }>>,
+  options?: GeminiHandlerOptions
+) => {
+  const ai = getAiClient(options?.apiKey);
+  const encoder = new TextEncoder();
+  const stream = await requestFactory(ai);
+
+  return new Response(new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of stream) {
+          const text = chunk.text;
+          if (!text) continue;
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: "chunk", text })}\n`));
+        }
+
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "done" })}\n`));
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    }
+  }), {
+    headers: STREAM_HEADERS,
+  });
+};
+
+const handleExtractImageStream = async (body: ExtractImageStreamBody, options?: GeminiHandlerOptions) => {
+  if (!isNonEmptyString(body.base64Data)) return badRequest("Bilddata saknas.");
+  if (!isNonEmptyString(body.mimeType)) return badRequest("Bildens MIME-typ saknas.");
+
+  return streamGeminiText(async (ai) => (
+    ai.models.generateContentStream({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          parts: [
+            { inlineData: { data: body.base64Data, mimeType: body.mimeType } },
+            {
+              text:
+                "Läs all text i bilden noggrant. Om texten är roterad, vänd eller ligger sidledes, korrigera detta mentalt och extrahera texten i rätt ordning. Behåll styckesindelningen och formateringen så gott det går. Returnera ENDAST den extraherade texten."
+            }
+          ]
+        }
+      ],
+    })
+  ), options);
+};
+
 const handleExtractPdf = async (body: ExtractPdfBody, options?: GeminiHandlerOptions) => {
   if (!isNonEmptyString(body.base64Data)) return badRequest("PDF-data saknas.");
 
@@ -318,6 +379,32 @@ const handleExtractPdf = async (body: ExtractPdfBody, options?: GeminiHandlerOpt
   }
 
   return json({ text });
+};
+
+const handleExtractPdfStream = async (body: ExtractPdfStreamBody, options?: GeminiHandlerOptions) => {
+  if (!isNonEmptyString(body.base64Data)) return badRequest("PDF-data saknas.");
+
+  return streamGeminiText(async (ai) => (
+    ai.models.generateContentStream({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          parts: [
+            {
+              text:
+                "Extrahera all text från detta dokument. Hantera olika sidorienteringar och layouter. Städa upp sidhuvuden, sidfötter och sidnummer så att resultatet blir en flytande text lämplig för en ljudbok eller podd. Returnera ENDAST texten."
+            },
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: body.base64Data,
+              }
+            }
+          ]
+        }
+      ]
+    })
+  ), options);
 };
 
 const handleGenerateNotes = async (body: GenerateNotesBody, options?: GeminiHandlerOptions) => {
@@ -381,6 +468,10 @@ export const handleGeminiRequest = async (
         return await handleExtractImage(body as ExtractImageBody, options);
       case "extractPdf":
         return await handleExtractPdf(body as ExtractPdfBody, options);
+      case "extractImageStream":
+        return await handleExtractImageStream(body as ExtractImageStreamBody, options);
+      case "extractPdfStream":
+        return await handleExtractPdfStream(body as ExtractPdfStreamBody, options);
       case "generateNotes":
         return await handleGenerateNotes(body as GenerateNotesBody, options);
       default:

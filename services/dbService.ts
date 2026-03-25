@@ -47,11 +47,12 @@ export const deleteAudioBlob = async (id: string): Promise<void> => {
 
 export const deleteAudioBlobsByPrefix = async (prefix: string): Promise<void> => {
   const db = await initDB();
+  const keyRange = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.openKeyCursor();
+    const request = store.openKeyCursor(keyRange);
 
     request.onsuccess = () => {
       const cursor = request.result;

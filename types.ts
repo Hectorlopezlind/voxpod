@@ -24,11 +24,18 @@ export interface EpisodeNotes {
   sections: EpisodeNotesSection[];
 }
 
+export interface EpisodeBookmark {
+  id: string;
+  time: number;
+  createdAt: number;
+}
+
 export interface PodcastEpisode {
   id: string;
   title: string;
   text: string;
   notes?: EpisodeNotes | string;
+  bookmarks?: EpisodeBookmark[];
   date: number;
   voice: string;
   audioBlobId: string; // Base ID for chunks: {id}_0, {id}_1...

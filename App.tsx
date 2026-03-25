@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes } from './types';
-import { generateTTS, translateText, extractTextFromImage, extractTextFromPdf, generateNotes, GeminiRequestOptions } from './services/geminiService';
+import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
+import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix } from './services/dbService';
 import { 
   initAudioElement, 
@@ -62,48 +62,61 @@ const LANGUAGES = [
   { code: 'Vietnamese', label: 'Vietnamese' }
 ];
 
-const TRANSLATIONS: Record<string, any> = {
-  en: {
-    app_subtitle: 'AI Podcast Streamer',
-    pdf_btn: '📄 PDF',
-    camera_btn: '📸 Camera',
-    images_btn: '📷 IMAGES',
-    scanning_pdf: 'Reading PDF...',
-    scanning_images: 'Reading images...',
-    translating: 'Translating...',
-    placeholder_text: 'Write something wonderful...',
-    placeholder_notes: 'Personal notes (optional)...',
-    clear_btn: '🗑️ Clear',
-    translate_btn: '🌐 Translate',
-    voice_label: 'Voice',
-    speed_label: 'Speed',
-    generate_btn: 'Start Podcast ✨',
-    creating_podcast: 'Creating podcast',
-    loading_text: 'Loading text',
-    translating_short: 'Translating',
-    progress_label: 'Progress',
-    time_left: 'left',
-    library_title: 'Library',
-    empty_library: 'Empty Library',
-    ai_voice_mode: 'AI VOICE MODE',
-    part_label: 'PART',
-    of_label: 'OF',
-    notes_title: 'Notes',
-    no_notes: 'No notes available yet.',
-    close_btn: 'Close',
-    sec_left: 'sec left',
-    scanning_progress: 'Scanning...',
-    est_time: 'est.',
-    countdown_label: 'COUNTDOWN',
-    almost_done: 'Almost done',
-    target_label: 'Target',
-    files_label: 'files',
-    step_label: 'Step',
-    image_order_title: 'Image order',
-    image_order_hint: 'The app reads images in this order.',
-    retrying: 'Retrying automatically',
-    waiting_for_network: 'Waiting for network'
-  },
+const EN_TRANSLATIONS = {
+  app_subtitle: 'AI Podcast Streamer',
+  pdf_btn: '📄 PDF',
+  camera_btn: '📸 Camera',
+  images_btn: '📷 IMAGES',
+  scanning_pdf: 'Reading PDF...',
+  scanning_images: 'Reading images...',
+  translating: 'Translating...',
+  placeholder_text: 'Write something wonderful...',
+  placeholder_notes: 'Personal notes (optional)...',
+  clear_btn: '🗑️ Clear',
+  translate_btn: '🌐 Translate',
+  voice_label: 'Voice',
+  speed_label: 'Speed',
+  generate_btn: 'Start Podcast ✨',
+  creating_podcast: 'Creating podcast',
+  loading_text: 'Loading text',
+  translating_short: 'Translating',
+  progress_label: 'Progress',
+  time_left: 'left',
+  library_title: 'Library',
+  empty_library: 'Empty Library',
+  ai_voice_mode: 'AI VOICE MODE',
+  part_label: 'PART',
+  of_label: 'OF',
+  notes_title: 'Notes',
+  no_notes: 'No notes available yet.',
+  close_btn: 'Close',
+  sec_left: 'sec left',
+  scanning_progress: 'Scanning...',
+  est_time: 'est.',
+  countdown_label: 'COUNTDOWN',
+  almost_done: 'Almost done',
+  target_label: 'Target',
+  files_label: 'files',
+  step_label: 'Step',
+  image_order_title: 'Image order',
+  image_order_hint: 'The app reads images in this order.',
+  retrying: 'Retrying automatically',
+  waiting_for_network: 'Waiting for network',
+  listen_summary_btn: 'Listen to summary',
+  pause_summary_btn: 'Pause summary',
+  summary_audio_error: 'Could not play the summary.',
+  summary_button_title: 'Summary audio',
+  add_bookmark_btn: 'Add bookmark',
+  bookmarks_title: 'Bookmarks',
+  speed_toggle_show: 'Show speed',
+  speed_toggle_hide: 'Hide speed'
+} as const;
+
+type SupportedLanguage = 'en' | 'sv';
+type TranslationKey = keyof typeof EN_TRANSLATIONS;
+
+const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = {
+  en: EN_TRANSLATIONS,
   sv: {
     app_subtitle: 'AI Podcast Streamer',
     pdf_btn: '📄 PDF',
@@ -143,7 +156,15 @@ const TRANSLATIONS: Record<string, any> = {
     image_order_title: 'Bildordning',
     image_order_hint: 'Appen läser bilderna i den här ordningen.',
     retrying: 'Försöker igen automatiskt',
-    waiting_for_network: 'Väntar på nätverk'
+    waiting_for_network: 'Väntar på nätverk',
+    listen_summary_btn: 'Lyssna på sammanfattning',
+    pause_summary_btn: 'Pausa sammanfattning',
+    summary_audio_error: 'Kunde inte spela upp sammanfattningen.',
+    summary_button_title: 'Lyssna på sammanfattning',
+    add_bookmark_btn: 'Lägg bokmärke',
+    bookmarks_title: 'Bokmärken',
+    speed_toggle_show: 'Visa hastighet',
+    speed_toggle_hide: 'Göm hastighet'
   }
 };
 
@@ -166,6 +187,28 @@ type GenerationSession = {
   totalSteps: number;
   notesIncluded: boolean;
   notesCompleted: boolean;
+};
+
+type LibraryUpdater = (currentLibrary: PodcastEpisode[]) => PodcastEpisode[];
+
+type ImportSource = 'pdf' | 'camera' | 'images';
+
+type ImportSessionState = {
+  id: string;
+  source: ImportSource;
+  text: string;
+  isComplete: boolean;
+};
+
+type LiveGenerationState = {
+  sourceSessionId: string;
+  episodeId: string;
+  episodeCreated: boolean;
+  generatedCount: number;
+  generatedDurations: number[];
+  startedPlayback: boolean;
+  voice: VoiceName;
+  title: string;
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -201,6 +244,14 @@ const imageNameCollator = new Intl.Collator(undefined, {
 const INITIAL_PLAYBACK_BUFFER = 2;
 const MAX_CHUNK_CHARACTERS = 1800;
 const MAX_NOTES_SOURCE_CHARACTERS = 12000;
+const MAX_SUMMARY_AUDIO_CHARACTERS = 1200;
+const MAX_SUMMARY_AUDIO_BULLETS = 4;
+const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
+const IMPORT_STREAM_FLUSH_CHARACTERS = 140;
+const LIBRARY_STORAGE_KEY = 'voxpod_library';
+const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
+const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
+const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 
@@ -533,16 +584,51 @@ const polishEpisodeNotes = (
   return mergeGeneratedAndPersonalNotes(polished, personalNotes, userLang);
 };
 
+const getSummaryAudioBlobId = (episode: PodcastEpisode) =>
+  `${episode.audioBlobId}_summary`;
+
+const toSpeechSentence = (value: string) => {
+  const normalized = normalizeInlineText(value);
+  if (!normalized) return '';
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+};
+
+const buildEpisodeSummaryPlaybackText = (
+  episode: PodcastEpisode,
+  userLang: string
+) => {
+  const notes = normalizeEpisodeNotes(episode.notes, userLang);
+  if (!notes) {
+    return truncateText(episode.text, MAX_SUMMARY_AUDIO_CHARACTERS);
+  }
+
+  const bulletLines = notes.sections
+    .flatMap(section => section.bullets)
+    .map(toSpeechSentence)
+    .filter(Boolean)
+    .slice(0, MAX_SUMMARY_AUDIO_BULLETS);
+
+  const summaryText = [
+    toSpeechSentence(notes.title),
+    toSpeechSentence(notes.summary),
+    ...bulletLines
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return truncateText(summaryText, MAX_SUMMARY_AUDIO_CHARACTERS);
+};
+
 const App: React.FC = () => {
-  const [userLang] = useState(() => {
+  const [userLang] = useState<SupportedLanguage>(() => {
     const navLang = navigator.language.split('-')[0];
-    return TRANSLATIONS[navLang] ? navLang : 'en';
+    return navLang in TRANSLATIONS ? navLang as SupportedLanguage : 'en';
   });
 
-  const t = (key: string) => TRANSLATIONS[userLang][key] || key;
+  const t = (key: TranslationKey) => TRANSLATIONS[userLang][key];
   const [library, setLibrary] = useState<PodcastEpisode[]>([]);
-  const [inputText, setInputText] = useState(() => localStorage.getItem('voxpod_input_text') || '');
-  const [inputNotes, setInputNotes] = useState(() => localStorage.getItem('voxpod_input_notes') || '');
+  const [inputText, setInputText] = useState(() => localStorage.getItem(INPUT_TEXT_STORAGE_KEY) || '');
+  const [inputNotes, setInputNotes] = useState(() => localStorage.getItem(INPUT_NOTES_STORAGE_KEY) || '');
   const [selectedVoice, setSelectedVoice] = useState<string>(PREMIUM_VOICES[0].name);
   const [playbackRate, setRate] = useState(1.0);
   
@@ -555,6 +641,7 @@ const App: React.FC = () => {
   const [isLoadingChunk, setIsLoadingChunk] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
+  const [showSpeedControls, setShowSpeedControls] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
@@ -571,9 +658,24 @@ const App: React.FC = () => {
   const [scanSession, setScanSession] = useState<ScanSession | null>(null);
   const [translateSession, setTranslateSession] = useState<TranslateSession | null>(null);
   const [generationSession, setGenerationSession] = useState<GenerationSession | null>(null);
+  const [summaryPlayback, setSummaryPlayback] = useState({
+    episodeId: null as string | null,
+    isLoading: false,
+    isPlaying: false
+  });
 
   // Cache for pre-loaded chunks to prevent gaps
   const chunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
+  const summaryChunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
+  const summaryAudioRef = useRef<HTMLAudioElement | null>(null);
+  const summaryBlobUrlRef = useRef<string | null>(null);
+  const summaryRequestRef = useRef(0);
+  const libraryRef = useRef<PodcastEpisode[]>([]);
+  const libraryPersistTimeoutRef = useRef<number | null>(null);
+  const hasHydratedLibraryRef = useRef(false);
+  const importSessionRef = useRef<ImportSessionState | null>(null);
+  const liveGenerationRef = useRef<LiveGenerationState | null>(null);
+  const liveGenerationPumpRef = useRef(false);
 
   const [player, setPlayer] = useState<PlayerState>({
     isPlaying: false,
@@ -612,6 +714,43 @@ const App: React.FC = () => {
       window.removeEventListener('resize', updateInset);
     };
   }, [player.activeEpisode]);
+
+  useEffect(() => {
+    const summaryEl = new Audio();
+    summaryEl.preload = 'auto';
+    summaryEl.setAttribute('playsinline', 'true');
+    summaryEl.setAttribute('webkit-playsinline', 'true');
+    summaryAudioRef.current = summaryEl;
+
+    const handlePlay = () => {
+      setSummaryPlayback(prev => ({ ...prev, isPlaying: true, isLoading: false }));
+    };
+
+    const handlePause = () => {
+      setSummaryPlayback(prev => ({ ...prev, isPlaying: false }));
+    };
+
+    const handleEnded = () => {
+      summaryEl.currentTime = 0;
+      setSummaryPlayback(prev => ({ ...prev, isPlaying: false }));
+    };
+
+    summaryEl.addEventListener('play', handlePlay);
+    summaryEl.addEventListener('pause', handlePause);
+    summaryEl.addEventListener('ended', handleEnded);
+
+    return () => {
+      summaryEl.pause();
+      summaryEl.removeEventListener('play', handlePlay);
+      summaryEl.removeEventListener('pause', handlePause);
+      summaryEl.removeEventListener('ended', handleEnded);
+      if (summaryBlobUrlRef.current) {
+        URL.revokeObjectURL(summaryBlobUrlRef.current);
+        summaryBlobUrlRef.current = null;
+      }
+      summaryAudioRef.current = null;
+    };
+  }, []);
 
   // Handle click outside to close language menu
   useEffect(() => {
@@ -669,14 +808,15 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    localStorage.setItem('voxpod_input_text', inputText);
+    localStorage.setItem(INPUT_TEXT_STORAGE_KEY, inputText);
   }, [inputText]);
 
   useEffect(() => {
-    localStorage.setItem('voxpod_input_notes', inputNotes);
+    localStorage.setItem(INPUT_NOTES_STORAGE_KEY, inputNotes);
   }, [inputNotes]);
 
-  const isBusy = isGenerating || isGeneratingNotes || isTranslating || scanSource !== null;
+  const isScanning = scanSource !== null;
+  const isBusy = isGenerating || isGeneratingNotes || isTranslating;
   const contentBottomInset = player.activeEpisode ? playerInset + 80 : 32;
 
   const makeRetryOptions = (): GeminiRequestOptions => ({
@@ -684,6 +824,107 @@ const App: React.FC = () => {
       setRetryNotice(online ? t('retrying') : t('waiting_for_network'));
     }
   });
+
+  const persistLibrarySnapshot = (episodes: PodcastEpisode[]) => {
+    localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(episodes));
+  };
+
+  const flushLibraryPersistence = () => {
+    if (libraryPersistTimeoutRef.current) {
+      window.clearTimeout(libraryPersistTimeoutRef.current);
+      libraryPersistTimeoutRef.current = null;
+    }
+
+    persistLibrarySnapshot(libraryRef.current);
+  };
+
+  const updateLibrary = (updater: LibraryUpdater) => {
+    const nextLibrary = updater(libraryRef.current);
+    libraryRef.current = nextLibrary;
+    setLibrary(nextLibrary);
+    return nextLibrary;
+  };
+
+  const startImportSession = (source: ImportSource) => {
+    const session: ImportSessionState = {
+      id: crypto.randomUUID(),
+      source,
+      text: '',
+      isComplete: false,
+    };
+
+    importSessionRef.current = session;
+    setInputText('');
+    return session;
+  };
+
+  const replaceImportSessionText = (sessionId: string, nextText: string) => {
+    const session = importSessionRef.current;
+    if (!session || session.id !== sessionId) return;
+
+    session.text = nextText;
+    setInputText(nextText);
+
+    if (liveGenerationRef.current?.sourceSessionId === sessionId) {
+      void pumpLiveGeneration();
+    }
+  };
+
+  const appendImportSessionText = (sessionId: string, textChunk: string) => {
+    const session = importSessionRef.current;
+    if (!session || session.id !== sessionId || !textChunk) return;
+
+    replaceImportSessionText(sessionId, `${session.text}${textChunk}`);
+  };
+
+  const completeImportSession = (sessionId: string) => {
+    const session = importSessionRef.current;
+    if (!session || session.id !== sessionId) return;
+    session.isComplete = true;
+
+    if (liveGenerationRef.current?.sourceSessionId === sessionId) {
+      void pumpLiveGeneration();
+    }
+  };
+
+  const loadSummaryAudioBuffer = (wavBuffer: ArrayBuffer) => {
+    const summaryEl = summaryAudioRef.current;
+    if (!summaryEl) {
+      throw new Error('Summary audio element is not available.');
+    }
+
+    if (summaryBlobUrlRef.current) {
+      URL.revokeObjectURL(summaryBlobUrlRef.current);
+    }
+
+    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+    summaryBlobUrlRef.current = URL.createObjectURL(blob);
+    summaryEl.src = summaryBlobUrlRef.current;
+    summaryEl.load();
+  };
+
+  const stopSummaryPlayback = (resetPosition: boolean = true) => {
+    const summaryEl = summaryAudioRef.current;
+    if (!summaryEl) return;
+
+    summaryRequestRef.current += 1;
+    summaryEl.pause();
+    if (resetPosition) {
+      summaryEl.currentTime = 0;
+    }
+
+    setSummaryPlayback(prev => ({ ...prev, isPlaying: false, isLoading: false }));
+  };
+
+  const pauseEpisodePlaybackForSummary = () => {
+    if (!player.activeEpisode) return;
+
+    const el = initAudioElement();
+    saveBookmark(player.activeEpisode.id, player.currentChunkIndex, el.currentTime);
+    pauseAudio();
+    setMediaSessionPlaybackState(false);
+    setPlayer(prev => ({ ...prev, isPlaying: false }));
+  };
 
   const applyChunkStartTime = async (timeInChunk: number) => {
     const el = initAudioElement();
@@ -764,10 +1005,49 @@ const App: React.FC = () => {
   }, [player.activeEpisode, player.currentChunkIndex]);
 
   useEffect(() => {
-    const saved = localStorage.getItem('voxpod_library');
+    const saved = localStorage.getItem(LIBRARY_STORAGE_KEY);
     if (saved) {
-      try { setLibrary(JSON.parse(saved)); } catch(e) { console.error(e); }
+      try {
+        const parsedLibrary = JSON.parse(saved) as PodcastEpisode[];
+        libraryRef.current = parsedLibrary;
+        setLibrary(parsedLibrary);
+      } catch (e) {
+        console.error(e);
+        libraryRef.current = [];
+      }
+    } else {
+      libraryRef.current = [];
     }
+
+    hasHydratedLibraryRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedLibraryRef.current) return;
+
+    if (libraryPersistTimeoutRef.current) {
+      window.clearTimeout(libraryPersistTimeoutRef.current);
+    }
+
+    libraryPersistTimeoutRef.current = window.setTimeout(() => {
+      persistLibrarySnapshot(libraryRef.current);
+      libraryPersistTimeoutRef.current = null;
+    }, LIBRARY_PERSIST_DELAY_MS);
+
+    return () => {
+      if (libraryPersistTimeoutRef.current) {
+        window.clearTimeout(libraryPersistTimeoutRef.current);
+        libraryPersistTimeoutRef.current = null;
+      }
+    };
+  }, [library]);
+
+  useEffect(() => {
+    return () => {
+      if (hasHydratedLibraryRef.current) {
+        flushLibraryPersistence();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -848,6 +1128,207 @@ const App: React.FC = () => {
     };
   };
 
+  const getImportChunkWindow = (sourceText: string, isComplete: boolean) => {
+    const allChunks = chunkText(sourceText);
+    const finalizedCount = isComplete ? allChunks.length : Math.max(0, allChunks.length - 1);
+
+    return {
+      allChunks,
+      finalizedCount,
+      projectedChunkCount: Math.max(finalizedCount, allChunks.length),
+    };
+  };
+
+  const syncLiveGenerationProgress = (
+    sourceText: string,
+    generatedCount: number,
+    notesCompleted: boolean,
+    isComplete: boolean
+  ) => {
+    const projectedChunks = Math.max(1, getImportChunkWindow(sourceText, isComplete).projectedChunkCount);
+    const total = projectedChunks + (notesCompleted ? 0 : 1);
+    const current = Math.min(total, generatedCount + (notesCompleted ? 1 : 0));
+
+    setGenerationProgress({
+      current,
+      total,
+    });
+
+    setGenerationSession(prev => prev ? {
+      ...prev,
+      totalSteps: total,
+      estimatedSeconds: estimateGenerationSeconds(projectedChunks, !notesCompleted),
+      notesCompleted,
+    } : prev);
+  };
+
+  const pumpLiveGeneration = async () => {
+    if (liveGenerationPumpRef.current) return;
+
+    liveGenerationPumpRef.current = true;
+    try {
+      while (true) {
+        const live = liveGenerationRef.current;
+        const source = importSessionRef.current;
+
+        if (!live || !source || source.id !== live.sourceSessionId) {
+          break;
+        }
+
+        const trimmedText = source.text.trim();
+        if (!trimmedText) {
+          if (source.isComplete) {
+            liveGenerationRef.current = null;
+            setIsGenerating(false);
+            setGenerationSession(null);
+          }
+          break;
+        }
+
+        const { allChunks, finalizedCount, projectedChunkCount } = getImportChunkWindow(trimmedText, source.isComplete);
+        const shouldGenerateNotes = trimmedText.length > 0;
+        const requiredInitialReady = source.isComplete
+          ? Math.max(1, Math.min(LIVE_GENERATION_MIN_READY_CHUNKS, finalizedCount))
+          : LIVE_GENERATION_MIN_READY_CHUNKS;
+
+        syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+
+        if (!live.episodeCreated) {
+          if (finalizedCount < requiredInitialReady) {
+            if (source.isComplete) {
+              liveGenerationRef.current = null;
+              setIsGenerating(false);
+              setGenerationSession(null);
+              setError('Det fanns inte tillräckligt med tolkad text för att starta podden.');
+            }
+            break;
+          }
+
+          for (let index = live.generatedCount; index < requiredInitialReady; index++) {
+            const { wavBuffer, duration } = await buildChunkAudio(allChunks[index]);
+            await saveAudioBlob(`${live.episodeId}_${index}`, wavBuffer);
+            chunkCache.current.set(`${live.episodeId}_${index}`, wavBuffer);
+            live.generatedDurations[index] = duration;
+            live.generatedCount = index + 1;
+            syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+          }
+
+          const fallbackNotes = buildFallbackEpisodeNotes(trimmedText, inputNotes, userLang);
+          const newEpisode: PodcastEpisode = {
+            id: live.episodeId,
+            title: live.title,
+            text: trimmedText,
+            notes: fallbackNotes,
+            bookmarks: [],
+            date: Date.now(),
+            voice: live.voice,
+            audioBlobId: live.episodeId,
+            chunkCount: Math.max(projectedChunkCount, live.generatedCount),
+            readyChunkCount: live.generatedCount,
+            generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
+            chunkDurations: [...live.generatedDurations],
+            duration: estimateEpisodeDurationSeconds(trimmedText),
+            playbackRate: 1,
+          };
+
+          updateLibrary(prev => [newEpisode, ...prev]);
+          live.episodeCreated = true;
+
+          try {
+            await handlePlayEpisode(newEpisode, 0);
+            live.startedPlayback = true;
+          } catch (error) {
+            console.error('Kunde inte starta uppspelningen direkt för live-generering', error);
+          }
+
+          continue;
+        }
+
+        patchEpisode(live.episodeId, {
+          text: trimmedText,
+          chunkCount: Math.max(projectedChunkCount, live.generatedCount),
+          duration: source.isComplete
+            ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(trimmedText))
+            : estimateEpisodeDurationSeconds(trimmedText),
+        });
+
+        if (live.generatedCount < finalizedCount) {
+          const nextIndex = live.generatedCount;
+          const { wavBuffer, duration } = await buildChunkAudio(allChunks[nextIndex]);
+          await saveAudioBlob(`${live.episodeId}_${nextIndex}`, wavBuffer);
+          chunkCache.current.set(`${live.episodeId}_${nextIndex}`, wavBuffer);
+          live.generatedDurations[nextIndex] = duration;
+          live.generatedCount = nextIndex + 1;
+
+          patchEpisode(live.episodeId, {
+            text: trimmedText,
+            readyChunkCount: live.generatedCount,
+            chunkCount: Math.max(projectedChunkCount, live.generatedCount),
+            chunkDurations: [...live.generatedDurations],
+            duration: source.isComplete
+              ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(trimmedText))
+              : estimateEpisodeDurationSeconds(trimmedText),
+          });
+
+          syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+          continue;
+        }
+
+        if (!source.isComplete) {
+          break;
+        }
+
+        patchEpisode(live.episodeId, {
+          text: trimmedText,
+          readyChunkCount: allChunks.length,
+          chunkCount: allChunks.length,
+          chunkDurations: [...live.generatedDurations],
+          duration: sumDurations(live.generatedDurations),
+          generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
+        });
+
+        if (shouldGenerateNotes) {
+          setIsGeneratingNotes(true);
+          try {
+            const generatedNotes = await generateNotes(buildNotesSourceText(trimmedText), makeRetryOptions());
+            setRetryNotice(null);
+            patchEpisode(live.episodeId, {
+              notes: polishEpisodeNotes(generatedNotes, trimmedText, inputNotes, userLang),
+              generationStatus: 'ready',
+              duration: sumDurations(live.generatedDurations),
+            });
+          } catch (error) {
+            console.error('Kunde inte generera anteckningar för live-import', error);
+            patchEpisode(live.episodeId, {
+              notes: buildFallbackEpisodeNotes(trimmedText, inputNotes, userLang),
+              generationStatus: 'ready',
+              duration: sumDurations(live.generatedDurations),
+            });
+          } finally {
+            setIsGeneratingNotes(false);
+          }
+        }
+
+        syncLiveGenerationProgress(trimmedText, allChunks.length, true, true);
+        liveGenerationRef.current = null;
+        setIsGenerating(false);
+        setGenerationSession(null);
+        setRetryNotice(null);
+        break;
+      }
+    } catch (error) {
+      console.error('Live-generering misslyckades', error);
+      setError(error instanceof Error && error.message ? error.message : 'Kunde inte skapa podden från filströmmen.');
+      liveGenerationRef.current = null;
+      setIsGenerating(false);
+      setIsGeneratingNotes(false);
+      setGenerationSession(null);
+      setRetryNotice(null);
+    } finally {
+      liveGenerationPumpRef.current = false;
+    }
+  };
+
   const handleGenerate = async () => {
     if (!inputText.trim() || isBusy) return;
     setIsGenerating(true);
@@ -855,6 +1336,35 @@ const App: React.FC = () => {
     setRetryNotice(null);
 
     try {
+      const activeImportSession = importSessionRef.current;
+      if (isScanning && activeImportSession && activeImportSession.text.trim()) {
+        const sourceText = activeImportSession.text.trim();
+        const projectedChunks = Math.max(1, getImportChunkWindow(sourceText, activeImportSession.isComplete).projectedChunkCount);
+
+        setGenerationProgress({ current: 0, total: projectedChunks + 1 });
+        setGenerationSession({
+          startedAt: Date.now(),
+          estimatedSeconds: estimateGenerationSeconds(projectedChunks, true),
+          totalSteps: projectedChunks + 1,
+          notesIncluded: true,
+          notesCompleted: false,
+        });
+
+        liveGenerationRef.current = {
+          sourceSessionId: activeImportSession.id,
+          episodeId: crypto.randomUUID(),
+          episodeCreated: false,
+          generatedCount: 0,
+          generatedDurations: [],
+          startedPlayback: false,
+          voice: selectedVoice as VoiceName,
+          title: sourceText.split('\n')[0].substring(0, 40) || 'Ny Produktion',
+        };
+
+        void pumpLiveGeneration();
+        return;
+      }
+
       const id = crypto.randomUUID();
       const chunks = chunkText(inputText);
       if (chunks.length === 0) return;
@@ -890,6 +1400,7 @@ const App: React.FC = () => {
         title,
         text: inputText,
         date: Date.now(),
+        bookmarks: [],
         voice: selectedVoice,
         audioBlobId: id,
         chunkCount: chunks.length,
@@ -901,11 +1412,7 @@ const App: React.FC = () => {
         playbackRate: 1
       };
 
-      setLibrary(prev => {
-        const updated = [newEpisode, ...prev];
-        localStorage.setItem('voxpod_library', JSON.stringify(updated));
-        return updated;
-      });
+      updateLibrary(prev => [newEpisode, ...prev]);
       await handlePlayEpisode(newEpisode, 0);
 
       for (let index = initialBufferSize; index < chunks.length; index++) {
@@ -958,10 +1465,12 @@ const App: React.FC = () => {
       setError(err instanceof Error && err.message ? err.message : "Kunde inte starta podden.");
     }
     finally {
-      setIsGenerating(false);
-      setIsGeneratingNotes(false);
-      setGenerationSession(null);
-      setRetryNotice(null);
+      if (!liveGenerationRef.current) {
+        setIsGenerating(false);
+        setIsGeneratingNotes(false);
+        setGenerationSession(null);
+        setRetryNotice(null);
+      }
     }
   };
 
@@ -985,6 +1494,78 @@ const App: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (err) { setError("MP3-nedladdning misslyckades."); }
     finally { setIsDownloading(null); }
+  };
+
+  const handlePlaySummary = async (episode: PodcastEpisode) => {
+    const summaryEl = summaryAudioRef.current;
+    const summaryText = buildEpisodeSummaryPlaybackText(episode, userLang);
+    if (!summaryEl || !summaryText) {
+      setError(t('summary_audio_error'));
+      return;
+    }
+
+    const isCurrentSummary = summaryPlayback.episodeId === episode.id;
+    if (isCurrentSummary && summaryPlayback.isPlaying) {
+      summaryEl.pause();
+      return;
+    }
+
+    await unlockAudioPlayback();
+
+    try {
+      pauseEpisodePlaybackForSummary();
+
+      if (isCurrentSummary && summaryEl.src) {
+        const summaryEnded = summaryEl.duration > 0 && summaryEl.currentTime >= Math.max(0, summaryEl.duration - 0.25);
+        if (summaryEnded) {
+          summaryEl.currentTime = 0;
+        }
+        await summaryEl.play();
+        return;
+      }
+
+      const requestId = ++summaryRequestRef.current;
+      const blobId = getSummaryAudioBlobId(episode);
+      setRetryNotice(null);
+      setSummaryPlayback({
+        episodeId: episode.id,
+        isLoading: true,
+        isPlaying: false
+      });
+
+      let wavBuffer = summaryChunkCache.current.get(blobId);
+      if (!wavBuffer) {
+        wavBuffer = await getAudioBlob(blobId) ?? undefined;
+      }
+
+      if (!wavBuffer) {
+        const base64 = await generateTTS(summaryText, episode.voice as VoiceName, undefined, makeRetryOptions());
+        setRetryNotice(null);
+        const pcmBytes = decodeBase64ToUint8(base64);
+        wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
+        await saveAudioBlob(blobId, wavBuffer);
+      }
+
+      if (requestId !== summaryRequestRef.current) {
+        return;
+      }
+
+      summaryChunkCache.current.set(blobId, wavBuffer);
+      loadSummaryAudioBuffer(wavBuffer);
+      summaryEl.currentTime = 0;
+      await summaryEl.play();
+    } catch (err) {
+      console.error('Kunde inte spela upp sammanfattningen', err);
+      setError(t('summary_audio_error'));
+      setSummaryPlayback(prev => ({ ...prev, isPlaying: false }));
+    } finally {
+      setRetryNotice(null);
+      setSummaryPlayback(prev =>
+        prev.episodeId === episode.id
+          ? { ...prev, isLoading: false }
+          : prev
+      );
+    }
   };
 
   const waitForChunkData = async (episode: PodcastEpisode, index: number, requestId: number) => {
@@ -1078,6 +1659,8 @@ const App: React.FC = () => {
   };
 
   const handlePlayEpisode = async (episode: PodcastEpisode, index: number = 0) => {
+    stopSummaryPlayback();
+
     let startChunk = index;
     let startTime = 0;
     
@@ -1122,6 +1705,7 @@ const App: React.FC = () => {
       : player.currentTime;
     
     if (shouldPlay) {
+      stopSummaryPlayback();
       const currentEpisode = player.activeEpisode;
       const chunkOffset = getEpisodeOffset(currentEpisode, player.currentChunkIndex);
       const chunkTime = Math.max(0, liveCurrentTime - chunkOffset);
@@ -1156,19 +1740,15 @@ const App: React.FC = () => {
   };
 
   const saveBookmark = (episodeId: string, chunkIndex: number, currentTime: number) => {
-    setLibrary(prev => {
-      const updated = prev.map(ep => {
-        if (ep.id === episodeId) {
-          return {
-            ...ep,
-            lastPosition: { chunkIndex, currentTime }
-          };
-        }
-        return ep;
-      });
-      localStorage.setItem('voxpod_library', JSON.stringify(updated));
-      return updated;
-    });
+    updateLibrary(prev => prev.map(ep => {
+      if (ep.id === episodeId) {
+        return {
+          ...ep,
+          lastPosition: { chunkIndex, currentTime }
+        };
+      }
+      return ep;
+    }));
 
     setPlayer(prev => {
       if (prev.activeEpisode?.id !== episodeId) return prev;
@@ -1187,6 +1767,7 @@ const App: React.FC = () => {
       if (!player.activeEpisode) return;
       const el = initAudioElement();
       saveBookmark(player.activeEpisode.id, player.currentChunkIndex, el.currentTime);
+      flushLibraryPersistence();
     };
 
     const handleVisibilityChange = () => {
@@ -1205,11 +1786,7 @@ const App: React.FC = () => {
   }, [player.activeEpisode, player.currentChunkIndex]);
 
   const patchEpisode = (episodeId: string, patch: Partial<PodcastEpisode>) => {
-    setLibrary(prev => {
-      const updated = prev.map(ep => ep.id === episodeId ? { ...ep, ...patch } : ep);
-      localStorage.setItem('voxpod_library', JSON.stringify(updated));
-      return updated;
-    });
+    updateLibrary(prev => prev.map(ep => ep.id === episodeId ? { ...ep, ...patch } : ep));
 
     setPlayer(prev => {
       if (prev.activeEpisode?.id !== episodeId) return prev;
@@ -1233,6 +1810,17 @@ const App: React.FC = () => {
         }
       });
 
+      summaryChunkCache.current.delete(getSummaryAudioBlobId(episode));
+
+      if (summaryPlayback.episodeId === episode.id) {
+        stopSummaryPlayback();
+        setSummaryPlayback({
+          episodeId: null,
+          isLoading: false,
+          isPlaying: false
+        });
+      }
+
       if (player.activeEpisode?.id === episode.id) {
         playRequestRef.current += 1;
         stopAudio();
@@ -1251,17 +1839,17 @@ const App: React.FC = () => {
         setShowNotesModal(null);
       }
 
-      setLibrary(prev => {
-        const updated = prev.filter(x => x.id !== episode.id);
-        localStorage.setItem('voxpod_library', JSON.stringify(updated));
-        return updated;
-      });
+      updateLibrary(prev => prev.filter(x => x.id !== episode.id));
     } catch (err) {
       setError("Kunde inte radera avsnittet.");
     }
   };
 
   const jumpToEpisodeTime = async (episode: PodcastEpisode, targetTime: number, autoplay: boolean = player.isPlaying) => {
+    if (autoplay) {
+      stopSummaryPlayback();
+    }
+
     const { chunkIndex, chunkTime } = locateChunkAtTime(episode, targetTime);
     const currentEpisodeId = player.activeEpisode?.id;
 
@@ -1281,6 +1869,44 @@ const App: React.FC = () => {
     }
 
     saveBookmark(episode.id, chunkIndex, chunkTime);
+  };
+
+  const getCurrentEpisodePlaybackTime = () => {
+    if (!player.activeEpisode) return 0;
+    const el = initAudioElement();
+    return el.src
+      ? getEpisodeOffset(player.activeEpisode, player.currentChunkIndex) + (el.currentTime || 0)
+      : player.currentTime;
+  };
+
+  const handleAddEpisodeBookmark = () => {
+    if (!player.activeEpisode) return;
+
+    const bookmarkTime = clamp(
+      getCurrentEpisodePlaybackTime(),
+      0,
+      getEpisodeDuration(player.activeEpisode)
+    );
+
+    const nextBookmark: EpisodeBookmark = {
+      id: crypto.randomUUID(),
+      time: bookmarkTime,
+      createdAt: Date.now(),
+    };
+
+    const existingBookmarks = player.activeEpisode.bookmarks ?? [];
+    const hasNearbyBookmark = existingBookmarks.some(bookmark => Math.abs(bookmark.time - bookmarkTime) < 2);
+    if (hasNearbyBookmark) {
+      return;
+    }
+
+    const updatedBookmarks = [...existingBookmarks, nextBookmark]
+      .sort((a, b) => a.time - b.time)
+      .slice(0, 24);
+
+    patchEpisode(player.activeEpisode.id, {
+      bookmarks: updatedBookmarks,
+    });
   };
 
   const handleSeek = async (value: number) => {
@@ -1313,6 +1939,37 @@ const App: React.FC = () => {
     }
   };
 
+  const streamIntoImportSession = async (
+    sessionId: string,
+    streamReader: (onChunk: (textChunk: string) => void) => Promise<void>,
+    options?: { suffix?: string }
+  ) => {
+    let pendingText = '';
+
+    const flushPendingText = () => {
+      if (!pendingText) return;
+      appendImportSessionText(sessionId, pendingText);
+      pendingText = '';
+    };
+
+    await streamReader((textChunk) => {
+      pendingText += textChunk;
+
+      if (
+        pendingText.length >= IMPORT_STREAM_FLUSH_CHARACTERS ||
+        /[\n.!?]\s*$/.test(pendingText)
+      ) {
+        flushPendingText();
+      }
+    });
+
+    flushPendingText();
+
+    if (options?.suffix) {
+      appendImportSessionText(sessionId, options.suffix);
+    }
+  };
+
   const processImages = async (
     rawFiles: File[],
     clearSource: () => void,
@@ -1324,6 +1981,7 @@ const App: React.FC = () => {
     }
 
     const files = sortFilesForReading(rawFiles);
+    const importSession = startImportSession(source);
     setScanSource(source);
     setRetryNotice(null);
 
@@ -1340,9 +1998,12 @@ const App: React.FC = () => {
         const file = files[i];
         try {
           const base64 = await readFileAsBase64(file);
-          const extracted = await extractTextFromImage(base64, file.type, makeRetryOptions());
+          await streamIntoImportSession(importSession.id, async (onChunk) => {
+            await streamTextFromImage(base64, file.type, onChunk);
+          }, {
+            suffix: i < files.length - 1 ? '\n\n' : '',
+          });
           setRetryNotice(null);
-          setInputText(prev => prev ? `${prev}\n\n${extracted}` : extracted);
         } catch (err) {
           throw new Error(`Bild ${i + 1} misslyckades.`);
         }
@@ -1351,6 +2012,7 @@ const App: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : "Bildläsning misslyckades.");
     } finally {
+      completeImportSession(importSession.id);
       setScanSource(null);
       setScanSession(null);
       setRetryNotice(null);
@@ -1378,6 +2040,7 @@ const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const importSession = startImportSession('pdf');
     setScanSource('pdf');
     setRetryNotice(null);
     setScanSession({
@@ -1389,13 +2052,15 @@ const App: React.FC = () => {
     await waitForNextPaint();
     try {
       const base64 = await readFileAsBase64(file);
-      const extracted = await extractTextFromPdf(base64, makeRetryOptions());
+      await streamIntoImportSession(importSession.id, async (onChunk) => {
+        await streamTextFromPdf(base64, onChunk);
+      });
       setRetryNotice(null);
-      setInputText(prev => prev ? `${prev}\n\n${extracted}` : extracted);
       setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : "PDF-läsning misslyckades.");
     } finally {
+      completeImportSession(importSession.id);
       setScanSource(null);
       setScanSession(null);
       setRetryNotice(null);
@@ -1429,9 +2094,10 @@ const App: React.FC = () => {
 
   const activePrimaryButton = (() => {
     if (generationSession && (isGenerating || isGeneratingNotes)) {
+      const elapsedSeconds = Math.floor((uiClock - generationSession.startedAt) / 1000);
       return {
         label: t('creating_podcast'),
-        elapsedSeconds: Math.floor((uiClock - generationSession.startedAt) / 1000),
+        remainingSeconds: Math.max(0, generationSession.estimatedSeconds - elapsedSeconds),
         progress: generationProgress.total > 0
           ? Math.max(0.08, generationProgress.current / generationProgress.total)
           : 0.08
@@ -1439,17 +2105,19 @@ const App: React.FC = () => {
     }
 
     if (isTranslating && translateSession) {
+      const elapsedSeconds = Math.floor((uiClock - translateSession.startedAt) / 1000);
       return {
         label: t('translating_short'),
-        elapsedSeconds: Math.floor((uiClock - translateSession.startedAt) / 1000),
+        remainingSeconds: Math.max(0, translateSession.estimatedSeconds - elapsedSeconds),
         progress: Math.min(0.94, Math.max(0.12, (uiClock - translateSession.startedAt) / 1000 / translateSession.estimatedSeconds))
       };
     }
 
     if (scanSource && scanSession) {
+      const elapsedSeconds = Math.floor((uiClock - scanSession.startedAt) / 1000);
       return {
         label: t('loading_text'),
-        elapsedSeconds: Math.floor((uiClock - scanSession.startedAt) / 1000),
+        remainingSeconds: Math.max(0, scanSession.estimatedSeconds - elapsedSeconds),
         progress: scanSession.totalItems > 0
           ? Math.max(0.08, scanSession.completedItems / scanSession.totalItems)
           : 0.08
@@ -1459,6 +2127,21 @@ const App: React.FC = () => {
     return null;
   })();
   const resolvedModalNotes = normalizeEpisodeNotes(showNotesModal?.notes, userLang);
+  const isModalSummaryLoading = showNotesModal
+    ? summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isLoading
+    : false;
+  const isModalSummaryPlaying = showNotesModal
+    ? summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isPlaying
+    : false;
+  const activeEpisodeBookmarks = player.activeEpisode?.bookmarks ?? [];
+  const activeImportSession = importSessionRef.current;
+  const canGenerateFromImportSession = (() => {
+    if (!isScanning || !activeImportSession?.text.trim()) return false;
+    const { finalizedCount } = getImportChunkWindow(activeImportSession.text.trim(), activeImportSession.isComplete);
+    return activeImportSession.isComplete ? finalizedCount > 0 : finalizedCount >= LIVE_GENERATION_MIN_READY_CHUNKS;
+  })();
+  const isInputLocked = isBusy || isScanning;
+  const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
 
   return (
     <div className="max-w-md w-full mx-auto min-h-screen flex flex-col bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
@@ -1484,13 +2167,13 @@ const App: React.FC = () => {
         )}
 
         <div className="flex gap-2">
-          <button onClick={() => pdfInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+          <button onClick={() => pdfInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
             {scanSource === 'pdf' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('pdf_btn')}
           </button>
-          <button onClick={() => cameraInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
             {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={isBusy} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
             {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
           <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
@@ -1508,7 +2191,7 @@ const App: React.FC = () => {
               name="podcast-text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              disabled={isBusy}
+              disabled={isInputLocked}
               placeholder={t('placeholder_text')}
               className="w-full h-32 p-5 bg-gray-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100 disabled:text-gray-400"
             />
@@ -1518,7 +2201,7 @@ const App: React.FC = () => {
               name="personal-notes"
               value={inputNotes}
               onChange={(e) => setInputNotes(e.target.value)}
-              disabled={isBusy}
+              disabled={isInputLocked}
               placeholder={t('placeholder_notes')}
               className="w-full h-20 p-5 bg-gray-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all disabled:text-gray-400"
             />
@@ -1527,7 +2210,7 @@ const App: React.FC = () => {
                 onClick={() => {
                   setInputText('');
                 }} 
-                disabled={!inputText || isBusy}
+                disabled={!inputText || isInputLocked}
                 className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-red-500 flex items-center gap-2 active:scale-90 transition-all disabled:text-gray-300"
               >
                 {t('clear_btn')}
@@ -1535,7 +2218,7 @@ const App: React.FC = () => {
               <div className="relative">
                 <button 
                   onClick={() => setShowLangMenu(!showLangMenu)} 
-                  disabled={isBusy || !inputText} 
+                  disabled={isInputLocked || !inputText} 
                   className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-indigo-600 flex items-center gap-2 active:scale-90 transition-all"
                 >
                   {isTranslating ? (
@@ -1571,13 +2254,13 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1">
               <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
-              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isBusy} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
+              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isInputLocked} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
                 {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
               </select>
             </div>
           </div>
 
-          <button onClick={handleGenerate} disabled={isBusy || !inputText.trim()} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
+          <button onClick={handleGenerate} disabled={isGenerateDisabled} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
             {activePrimaryButton && (
               <div 
                 className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-500" 
@@ -1592,7 +2275,7 @@ const App: React.FC = () => {
                       <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
                       {activePrimaryButton.label}
                     </span>
-                    <span className="tabular-nums">{formatStopwatch(activePrimaryButton.elapsedSeconds)}</span>
+                    <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
                   </div>
                   {retryNotice && (
                     <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
@@ -1623,6 +2306,17 @@ const App: React.FC = () => {
                   </p>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void handlePlaySummary(ep); }}
+                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                    title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
+                  >
+                    {summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading
+                      ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                      : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying
+                        ? '❚❚'
+                        : '🔊'}
+                  </button>
                   {ep.notes && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); setShowNotesModal(ep); }}
@@ -1660,6 +2354,26 @@ const App: React.FC = () => {
       {player.activeEpisode && (
         <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
           <div className="max-w-md mx-auto w-full flex flex-col gap-5">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                onClick={() => setShowSpeedControls(prev => !prev)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
+                title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+              >
+                <span className="text-base leading-none">⚙</span>
+                <span>{playbackRate.toFixed(1)}x</span>
+              </button>
+
+              <button
+                onClick={handleAddEpisodeBookmark}
+                className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
+                title={t('add_bookmark_btn')}
+              >
+                <span className="text-base leading-none">🔖</span>
+                <span>{t('add_bookmark_btn')}</span>
+              </button>
+            </div>
+
             <div className="space-y-2 group">
               <div className="relative h-2 w-full bg-indigo-50 rounded-full overflow-hidden shadow-inner">
                 <div 
@@ -1685,23 +2399,45 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
-                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
+            {showSpeedControls && (
+              <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
+                </div>
+                <input
+                  id="player-speed-slider"
+                  name="player-speed-slider"
+                  type="range"
+                  min="0.4"
+                  max="2.0"
+                  step="0.1"
+                  value={playbackRate}
+                  onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
+                  className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
               </div>
-              <input
-                id="player-speed-slider"
-                name="player-speed-slider"
-                type="range"
-                min="0.4"
-                max="2.0"
-                step="0.1"
-                value={playbackRate}
-                onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
-                className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
-              />
-            </div>
+            )}
+
+            {activeEpisodeBookmarks.length > 0 && (
+              <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('bookmarks_title')}</span>
+                  <span className="text-[10px] font-bold text-gray-400">{activeEpisodeBookmarks.length}</span>
+                </div>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                  {activeEpisodeBookmarks.map((bookmark) => (
+                    <button
+                      key={bookmark.id}
+                      onClick={() => { if (player.activeEpisode) void jumpToEpisodeTime(player.activeEpisode, bookmark.time); }}
+                      className="shrink-0 rounded-full bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-600 transition-colors hover:bg-indigo-100"
+                    >
+                      {formatTime(bookmark.time)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between">
               <div className="flex-1 truncate mr-6 text-left">
@@ -1756,6 +2492,22 @@ const App: React.FC = () => {
                       <h4 className="mt-2 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
                       <p className="mt-3 text-sm leading-relaxed text-white/85">{resolvedModalNotes.summary}</p>
                     </section>
+
+                    <button
+                      onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
+                      className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all ${
+                        isModalSummaryPlaying
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                          : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                      }`}
+                    >
+                      {isModalSummaryLoading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          {t('listen_summary_btn')}
+                        </span>
+                      ) : isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                    </button>
 
                     {resolvedModalNotes.sections.map((section, index) => (
                       <section key={`${section.heading}-${index}`} className="rounded-3xl border border-gray-100 bg-gray-50 p-5 shadow-sm">

@@ -13,6 +13,21 @@ export type GeminiRequestOptions = {
   onRetry?: (state: GeminiRetryState) => void;
 };
 
+type GeminiStreamPayload = {
+  action: "extractImageStream";
+  base64Data: string;
+  mimeType: string;
+} | {
+  action: "extractPdfStream";
+  base64Data: string;
+};
+
+type GeminiStreamEvent = {
+  type?: "chunk" | "done";
+  text?: string;
+  error?: string;
+};
+
 class GeminiRequestError extends Error {
   status?: number;
   retryable: boolean;
@@ -133,6 +148,81 @@ const postGemini = async <T>(
   }
 };
 
+const streamGeminiText = async (
+  payload: GeminiStreamPayload,
+  onChunk: (textChunk: string) => void
+) => {
+  const response = await fetch(GEMINI_API_ROUTE, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    const message =
+      typeof result?.error === "string" ? result.error : "Ett serverfel uppstod.";
+    throw new GeminiRequestError(message, {
+      status: response.status,
+      retryable: false,
+    });
+  }
+
+  if (!response.body) {
+    throw new GeminiRequestError("Servern returnerade ingen textström.", {
+      retryable: false,
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+
+      if (line) {
+        const event = JSON.parse(line) as GeminiStreamEvent;
+        if (event.error) {
+          throw new GeminiRequestError(event.error, {
+            retryable: false,
+          });
+        }
+        if (event.type === "chunk" && event.text) {
+          onChunk(event.text);
+        }
+      }
+
+      newlineIndex = buffer.indexOf("\n");
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  const trailingLine = buffer.trim();
+  if (trailingLine) {
+    const event = JSON.parse(trailingLine) as GeminiStreamEvent;
+    if (event.error) {
+      throw new GeminiRequestError(event.error, {
+        retryable: false,
+      });
+    }
+    if (event.type === "chunk" && event.text) {
+      onChunk(event.text);
+    }
+  }
+};
+
 export const generateTTS = async (
   text: string,
   voice: VoiceName,
@@ -177,6 +267,18 @@ export const extractTextFromImage = async (
   return result.text;
 };
 
+export const streamTextFromImage = async (
+  base64Data: string,
+  mimeType: string,
+  onChunk: (textChunk: string) => void
+) => {
+  await streamGeminiText({
+    action: "extractImageStream",
+    base64Data,
+    mimeType,
+  }, onChunk);
+};
+
 export const extractTextFromPdf = async (
   base64Data: string,
   options?: GeminiRequestOptions
@@ -187,6 +289,16 @@ export const extractTextFromPdf = async (
   }, options);
 
   return result.text;
+};
+
+export const streamTextFromPdf = async (
+  base64Data: string,
+  onChunk: (textChunk: string) => void
+) => {
+  await streamGeminiText({
+    action: "extractPdfStream",
+    base64Data,
+  }, onChunk);
 };
 
 export const generateNotes = async (
