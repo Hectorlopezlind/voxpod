@@ -418,10 +418,10 @@ const handleGenerateNotes = async (body: GenerateNotesBody, options?: GeminiHand
 Format:
 {
   "title": "kort rubrik",
-  "summary": "2-3 meningar som sammanfattar innehållet",
+  "summary": "3-5 meningar som sammanfattar det viktigaste i texten",
   "sections": [
     {
-      "heading": "Rubrik",
+      "heading": "Viktigaste punkterna",
       "bullets": ["punkt 1", "punkt 2", "punkt 3"]
     }
   ]
@@ -429,13 +429,14 @@ Format:
 
 Regler:
 - Skriv på samma språk som texten.
+- Fokusera på att skapa en kort, tydlig sammanfattning av texten, inte lösa anteckningar.
+- Sammanfattningen ska lyfta fram huvudidéer, slutsatser och det viktigaste innehållet först.
+- Skapa exakt 1 sektion.
+- Sektionen ska innehålla 3 till 5 bullets med de viktigaste punkterna, inga detaljer som inte är centrala.
+- Varje bullet ska vara en hel mening eller en tydlig fras utan asterisker i texten.
 - Skriv tydliga, konkreta rubriker som passar innehållet.
 - Undvik generiska rubriker som "Sektion 1", "Del 1" eller "Punktlista".
-- Varje bullet ska vara en hel mening eller en tydlig fras utan asterisker i texten.
-- Skapa 2 till 4 sektioner.
-- Varje sektion ska ha 2 till 4 bullets.
 - Sammanfattningen ska kännas välskriven och lätt att skumma.
-- Lyft fram det viktigaste först och håll en snygg struktur.
 - Returnera bara JSON.
 
 TEXT:

@@ -109,7 +109,9 @@ const EN_TRANSLATIONS = {
   add_bookmark_btn: 'Add bookmark',
   bookmarks_title: 'Bookmarks',
   speed_toggle_show: 'Show speed',
-  speed_toggle_hide: 'Hide speed'
+  speed_toggle_hide: 'Hide speed',
+  player_hide: 'Hide player',
+  player_show: 'Show player'
 } as const;
 
 type SupportedLanguage = 'en' | 'sv';
@@ -164,7 +166,9 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     add_bookmark_btn: 'Lägg bokmärke',
     bookmarks_title: 'Bokmärken',
     speed_toggle_show: 'Visa hastighet',
-    speed_toggle_hide: 'Göm hastighet'
+    speed_toggle_hide: 'Göm hastighet',
+    player_hide: 'Göm spelare',
+    player_show: 'Visa spelare'
   }
 };
 
@@ -445,45 +449,15 @@ const NOTES_UI_LABELS = {
   }
 } as const;
 
+const PERSONAL_NOTES_HEADINGS = new Set(
+  Object.values(NOTES_UI_LABELS).map(labels => labels.personal.toLowerCase())
+);
+
 const cleanBulletText = (value: string) =>
   value
     .replace(/^[-*•]\s*/, '')
     .replace(/^\d+[\).\s-]+/, '')
     .trim();
-
-const normalizeEpisodeNotes = (
-  notes: PodcastEpisode['notes'],
-  userLang: string
-): EpisodeNotes | null => {
-  if (!notes) return null;
-
-  if (typeof notes !== 'string') {
-    return notes;
-  }
-
-  const labels = NOTES_UI_LABELS[userLang as keyof typeof NOTES_UI_LABELS] ?? NOTES_UI_LABELS.en;
-  const lines = notes
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  if (lines.length === 0) return null;
-
-  const bullets = lines
-    .map(cleanBulletText)
-    .filter(Boolean);
-
-  return {
-    title: labels.title,
-    summary: bullets.slice(0, 2).join(' ').slice(0, 260) || notes.slice(0, 260),
-    sections: [
-      {
-        heading: labels.highlights,
-        bullets: bullets.length > 0 ? bullets : [notes.trim()]
-      }
-    ]
-  };
-};
 
 const mergeGeneratedAndPersonalNotes = (
   generatedNotes: EpisodeNotes,
@@ -539,14 +513,161 @@ const finalizeNoteBullet = (value: string) => {
 const getNotesLabels = (userLang: string) =>
   NOTES_UI_LABELS[userLang as keyof typeof NOTES_UI_LABELS] ?? NOTES_UI_LABELS.en;
 
-const collectNoteBullets = (text: string) => {
-  const bullets = text
+const SUMMARY_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'att', 'av', 'be', 'blev', 'by', 'de', 'dem', 'den', 'det',
+  'detta', 'do', 'där', 'eller', 'en', 'ett', 'for', 'från', 'för', 'had', 'har', 'have', 'hur',
+  'i', 'if', 'in', 'into', 'is', 'it', 'kan', 'med', 'men', 'not', 'och', 'om', 'on', 'or', 'på',
+  'så', 'som', 'that', 'the', 'their', 'them', 'there', 'this', 'till', 'to', 'var', 'vi',
+  'was', 'were', 'what', 'which', 'with'
+]);
+
+const tokenizeSummaryWords = (value: string) =>
+  value
+    .toLowerCase()
+    .match(/[a-z0-9à-öø-ÿ]+/gi)
+    ?.filter(word => word.length > 3 && !SUMMARY_STOP_WORDS.has(word)) ?? [];
+
+const collectTextSentences = (text: string) =>
+  text
     .split(/\n+/)
     .flatMap(paragraph => splitParagraphIntoSentences(paragraph))
-    .map(finalizeNoteBullet)
-    .filter(bullet => bullet.length >= 18);
+    .map(sentence => normalizeInlineText(sentence))
+    .filter(sentence => sentence.length >= 24);
 
-  return Array.from(new Set(bullets));
+const selectSummarySentences = (text: string, maxSentences: number) => {
+  const sentences = collectTextSentences(text);
+  if (sentences.length <= maxSentences) {
+    return sentences;
+  }
+
+  const frequencies = new Map<string, number>();
+  sentences.forEach(sentence => {
+    tokenizeSummaryWords(sentence).forEach(word => {
+      frequencies.set(word, (frequencies.get(word) ?? 0) + 1);
+    });
+  });
+
+  return sentences
+    .map((sentence, index) => {
+      const tokens = tokenizeSummaryWords(sentence);
+      const keywordScore = tokens.reduce((total, word) => total + (frequencies.get(word) ?? 0), 0);
+      const densityScore = keywordScore / Math.max(tokens.length, 1);
+      const introBonus = index === 0 ? 1.35 : index === 1 ? 1.15 : 1;
+      const outroBonus = index === sentences.length - 1 ? 1.1 : 1;
+      const lengthBonus = sentence.length >= 60 && sentence.length <= 220 ? 1.1 : 0.95;
+
+      return {
+        index,
+        sentence,
+        score: densityScore * introBonus * outroBonus * lengthBonus
+      };
+    })
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, maxSentences)
+    .sort((a, b) => a.index - b.index)
+    .map(item => item.sentence);
+};
+
+const buildSummaryFallbackCore = (
+  text: string,
+  userLang: string,
+  titleOverride?: string
+): EpisodeNotes => {
+  const labels = getNotesLabels(userLang);
+  const firstLine = titleOverride
+    || text
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .find(Boolean)
+    || labels.title;
+  const summarySentences = selectSummarySentences(text, 3);
+  const bulletSentences = selectSummarySentences(text, 4);
+  const summary = truncateText(summarySentences.join(' '), 280)
+    || truncateText(text, 280)
+    || labels.summary;
+  const bullets = bulletSentences
+    .map(finalizeNoteBullet)
+    .filter(Boolean)
+    .slice(0, 4);
+
+  return {
+    title: truncateText(firstLine, 70) || labels.title,
+    summary,
+    sections: [
+      {
+        heading: labels.keyPoints,
+        bullets: bullets.length > 0 ? bullets : [finalizeNoteBullet(summary) || summary]
+      }
+    ]
+  };
+};
+
+const extractPersonalNotesSection = (
+  sections: EpisodeNotes['sections'],
+  userLang: string
+) => {
+  const labels = getNotesLabels(userLang);
+  const bullets = sections
+    .filter(section => PERSONAL_NOTES_HEADINGS.has(normalizeInlineText(section.heading).toLowerCase()))
+    .flatMap(section => section.bullets)
+    .map(finalizeNoteBullet)
+    .filter(Boolean)
+    .slice(0, 4);
+
+  if (bullets.length === 0) {
+    return null;
+  }
+
+  return {
+    heading: labels.personal,
+    bullets
+  };
+};
+
+const sanitizeEpisodeNotes = (
+  notes: EpisodeNotes,
+  sourceText: string,
+  userLang: string
+): EpisodeNotes => {
+  const labels = getNotesLabels(userLang);
+  const fallback = buildSummaryFallbackCore(sourceText, userLang, notes.title);
+  const personalSection = extractPersonalNotesSection(notes.sections, userLang);
+  const mainBullets = notes.sections
+    .filter(section => !PERSONAL_NOTES_HEADINGS.has(normalizeInlineText(section.heading).toLowerCase()))
+    .flatMap(section => section.bullets)
+    .map(finalizeNoteBullet)
+    .filter(Boolean);
+  const uniqueBullets = Array.from(new Set(mainBullets)).slice(0, 4);
+
+  return {
+    title: truncateText(notes.title || fallback.title, 70) || fallback.title,
+    summary: truncateText(notes.summary || fallback.summary, 280) || fallback.summary,
+    sections: [
+      {
+        heading: labels.keyPoints,
+        bullets: uniqueBullets.length > 0 ? uniqueBullets : fallback.sections[0].bullets
+      },
+      ...(personalSection ? [personalSection] : [])
+    ]
+  };
+};
+
+const normalizeEpisodeNotes = (
+  notes: PodcastEpisode['notes'],
+  userLang: string
+): EpisodeNotes | null => {
+  if (!notes) return null;
+
+  if (typeof notes !== 'string') {
+    const sourceText = [
+      notes.summary,
+      ...notes.sections.flatMap(section => section.bullets)
+    ].join(' ');
+    return sanitizeEpisodeNotes(notes, sourceText, userLang);
+  }
+
+  if (!notes.trim()) return null;
+  return buildSummaryFallbackCore(notes, userLang);
 };
 
 const buildNotesSourceText = (text: string) => {
@@ -565,36 +686,7 @@ const buildFallbackEpisodeNotes = (
   personalNotes: string,
   userLang: string
 ): EpisodeNotes => {
-  const labels = getNotesLabels(userLang);
-  const firstLine = text
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(Boolean) ?? labels.title;
-  const bullets = collectNoteBullets(text);
-  const summarySource = bullets.slice(0, 2).join(' ') || text;
-  const summary = truncateText(summarySource, 260) || labels.summary;
-  const sections = [
-    {
-      heading: labels.keyPoints,
-      bullets: bullets.slice(0, 4)
-    },
-    {
-      heading: labels.details,
-      bullets: bullets.slice(4, 8)
-    }
-  ].filter(section => section.bullets.length > 0);
-
-  const fallback: EpisodeNotes = {
-    title: truncateText(firstLine, 70) || labels.title,
-    summary,
-    sections: sections.length > 0 ? sections : [
-      {
-        heading: labels.highlights,
-        bullets: [summary]
-      }
-    ]
-  };
-
+  const fallback = buildSummaryFallbackCore(text, userLang);
   return mergeGeneratedAndPersonalNotes(fallback, personalNotes, userLang);
 };
 
@@ -604,41 +696,11 @@ const polishEpisodeNotes = (
   personalNotes: string,
   userLang: string
 ): EpisodeNotes => {
-  const labels = getNotesLabels(userLang);
-  const fallback = buildFallbackEpisodeNotes(sourceText, '', userLang);
-  const fallbackHeadings = [labels.keyPoints, labels.details, labels.highlights];
-
   if (!notes) {
-    return mergeGeneratedAndPersonalNotes(fallback, personalNotes, userLang);
+    return mergeGeneratedAndPersonalNotes(buildSummaryFallbackCore(sourceText, userLang), personalNotes, userLang);
   }
 
-  const sections = notes.sections
-    .map((section, index) => {
-      const bullets = section.bullets
-        .map(finalizeNoteBullet)
-        .filter(Boolean)
-        .slice(0, 4);
-      const heading = normalizeInlineText(section.heading);
-      const isGenericHeading = /^(section|sektion|rubrik)\b/i.test(heading);
-
-      if (bullets.length === 0) {
-        return null;
-      }
-
-      return {
-        heading: heading && !isGenericHeading ? truncateText(heading, 40) : fallbackHeadings[index] ?? labels.highlights,
-        bullets
-      };
-    })
-    .filter((section): section is EpisodeNotes['sections'][number] => Boolean(section))
-    .slice(0, 4);
-
-  const polished: EpisodeNotes = {
-    title: truncateText(notes.title || fallback.title, 70) || fallback.title,
-    summary: truncateText(notes.summary || fallback.summary, 280) || fallback.summary,
-    sections: sections.length > 0 ? sections : fallback.sections
-  };
-
+  const polished = sanitizeEpisodeNotes(notes, sourceText, userLang);
   return mergeGeneratedAndPersonalNotes(polished, personalNotes, userLang);
 };
 
@@ -724,6 +786,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
+  const [isPlayerCollapsed, setIsPlayerCollapsed] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -793,6 +856,18 @@ const App: React.FC = () => {
       window.removeEventListener('resize', updateInset);
     };
   }, [player.activeEpisode]);
+
+  useEffect(() => {
+    if (player.activeEpisode) {
+      setIsPlayerCollapsed(false);
+    }
+  }, [player.activeEpisode?.id]);
+
+  useEffect(() => {
+    if (isPlayerCollapsed) {
+      setShowSpeedControls(false);
+    }
+  }, [isPlayerCollapsed]);
 
   useEffect(() => {
     const summaryEl = new Audio();
@@ -896,7 +971,7 @@ const App: React.FC = () => {
 
   const isScanning = scanSource !== null;
   const isBusy = isGenerating || isGeneratingNotes || isTranslating;
-  const contentBottomInset = player.activeEpisode ? playerInset + 80 : 32;
+  const contentBottomInset = player.activeEpisode ? playerInset + 24 : 32;
 
   const makeRetryOptions = (): GeminiRequestOptions => ({
     onRetry: ({ online }) => {
@@ -2270,9 +2345,13 @@ const App: React.FC = () => {
   })();
   const isInputLocked = isBusy || isScanning;
   const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
+  const notesLabels = getNotesLabels(userLang);
 
   return (
-    <div className="max-w-md w-full mx-auto min-h-screen flex flex-col bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
+    <div
+      className="max-w-md w-full mx-auto h-[100dvh] flex flex-col overflow-y-auto bg-gray-50 font-sans text-gray-900 overflow-x-hidden"
+      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+    >
       <header className="p-6 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
         <div className="flex flex-col text-left">
           <h1 className="text-xl font-black text-indigo-600 tracking-tighter">VoxPod AI</h1>
@@ -2281,7 +2360,7 @@ const App: React.FC = () => {
       </header>
 
       <main
-        className="p-5 space-y-6"
+        className="flex-1 p-5 space-y-6"
         style={{
           paddingBottom: `${contentBottomInset}px`,
           scrollPaddingBottom: `${contentBottomInset}px`
@@ -2474,132 +2553,170 @@ const App: React.FC = () => {
           </div>
         </section>
 
-        {player.activeEpisode && (
-          <div aria-hidden="true" style={{ height: `${contentBottomInset}px` }} />
-        )}
       </main>
 
       {player.activeEpisode && (
         <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
-          <div className="max-w-md mx-auto w-full flex flex-col gap-5">
-            <div className="flex items-center justify-between gap-3">
+          <div className="max-w-md mx-auto w-full flex flex-col gap-4">
+            <div className="flex justify-center">
               <button
-                onClick={() => setShowSpeedControls(prev => !prev)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
-                title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                onClick={() => setIsPlayerCollapsed(prev => !prev)}
+                className="flex h-7 w-12 items-center justify-center rounded-full border border-gray-100 bg-white text-sm font-black text-indigo-600 shadow-sm transition-colors hover:bg-indigo-50"
+                title={isPlayerCollapsed ? t('player_show') : t('player_hide')}
+                aria-label={isPlayerCollapsed ? t('player_show') : t('player_hide')}
               >
-                <span className="text-base leading-none">⚙</span>
-                <span>{playbackRate.toFixed(1)}x</span>
-              </button>
-
-              <button
-                onClick={handleAddEpisodeBookmark}
-                className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
-                title={t('add_bookmark_btn')}
-              >
-                <span className="text-base leading-none">🔖</span>
-                <span>{t('add_bookmark_btn')}</span>
+                {isPlayerCollapsed ? '↑' : '↓'}
               </button>
             </div>
 
-            <div className="space-y-2 group">
-              <div className="relative h-2 w-full bg-indigo-50 rounded-full overflow-hidden shadow-inner">
-                <div 
-                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(79,70,229,0.4)]"
-                  style={{ width: `${player.duration ? (player.currentTime / player.duration) * 100 : 0}%` }}
-                />
-                <input 
-                  id="playback-seek"
-                  name="playback-seek"
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  step="0.1"
-                  value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
-                  onChange={(e) => { void handleSeek(parseFloat(e.target.value)); }}
-                  aria-label="Playback position"
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
-              </div>
-              <div className="flex justify-between px-1.5">
-                <span className="text-[10px] font-black tabular-nums text-indigo-600/80 tracking-tight">{formatTime(player.currentTime)}</span>
-                <span className="text-[10px] font-black tabular-nums text-gray-400/80 tracking-tight">-{formatTime(Math.max(0, player.duration - player.currentTime))}</span>
-              </div>
-            </div>
-
-            {showSpeedControls && (
-              <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
-                </div>
-                <input
-                  id="player-speed-slider"
-                  name="player-speed-slider"
-                  type="range"
-                  min="0.4"
-                  max="2.0"
-                  step="0.1"
-                  value={playbackRate}
-                  onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
-                  className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-              </div>
-            )}
-
-            {activeEpisodeBookmarks.length > 0 && (
-              <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('bookmarks_title')}</span>
-                  <span className="text-[10px] font-bold text-gray-400">{activeEpisodeBookmarks.length}</span>
-                </div>
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                  {activeEpisodeBookmarks.map((bookmark) => (
-                    <button
-                      key={bookmark.id}
-                      onClick={() => { if (player.activeEpisode) void jumpToEpisodeTime(player.activeEpisode, bookmark.time); }}
-                      className="shrink-0 rounded-full bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-600 transition-colors hover:bg-indigo-100"
-                    >
-                      {formatTime(bookmark.time)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <div className="flex-1 truncate mr-6 text-left">
-                <h4 className="text-[13px] font-black truncate text-gray-800 tracking-tight leading-tight">{player.activeEpisode.title}</h4>
-                <div className="flex items-center gap-2.5 mt-0.5">
-                  <span className="text-[8px] font-black uppercase text-indigo-500/70 tracking-widest">{t('ai_voice_mode')}</span>
-                  {player.activeEpisode.generationStatus === 'processing' && (
-                    <span className="text-[8px] bg-indigo-50/50 text-indigo-600/70 px-2 py-0.5 rounded-full font-black border border-indigo-100/50">
-                      {t('creating_podcast')}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-5">
-                <button onClick={() => { void handleSkip(-15); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
-                  <span className="text-lg">↺</span>
-                  <span className="mt-[-4px]">15</span>
-                </button>
-                <button 
-                  onClick={() => { void handleTogglePlay(); }} 
-                  className="w-14 h-14 bg-indigo-600 text-white rounded-[1.75rem] flex items-center justify-center text-xl shadow-[0_10px_25px_-5px_rgba(79,70,229,0.4)] active:scale-95 transition-all relative hover:bg-indigo-700"
+            {isPlayerCollapsed ? (
+              <div className="flex items-center gap-3 rounded-[2rem] border border-indigo-100 bg-white px-4 py-3 shadow-sm">
+                <button
+                  onClick={() => { void handleTogglePlay(); }}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-lg text-white shadow-[0_10px_20px_-10px_rgba(79,70,229,0.45)]"
                 >
                   {isLoadingChunk ? (
-                    <div className="w-5 h-5 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border-2 border-white/25 border-t-white rounded-full animate-spin"></div>
                   ) : (
                     player.isPlaying ? '❚❚' : '▶'
                   )}
                 </button>
-                <button onClick={() => { void handleSkip(30); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
-                  <span className="text-lg">↻</span>
-                  <span className="mt-[-4px]">30</span>
+                <div className="min-w-0 flex-1 text-left">
+                  <h4 className="truncate text-[13px] font-black text-gray-800">{player.activeEpisode.title}</h4>
+                  <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-500/80">
+                    {formatTime(player.currentTime)} / {formatTime(player.duration)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsPlayerCollapsed(false)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-indigo-600"
+                  title={t('player_show')}
+                >
+                  ↑
                 </button>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => setShowSpeedControls(prev => !prev)}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
+                    title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                  >
+                    <span className="text-base leading-none">⚙</span>
+                    <span>{playbackRate.toFixed(1)}x</span>
+                  </button>
+
+                  <button
+                    onClick={handleAddEpisodeBookmark}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
+                    title={t('add_bookmark_btn')}
+                  >
+                    <span className="text-base leading-none">🔖</span>
+                    <span>{t('add_bookmark_btn')}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 group">
+                  <div className="relative h-2 w-full bg-indigo-50 rounded-full overflow-hidden shadow-inner">
+                    <div 
+                      className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(79,70,229,0.4)]"
+                      style={{ width: `${player.duration ? (player.currentTime / player.duration) * 100 : 0}%` }}
+                    />
+                    <input 
+                      id="playback-seek"
+                      name="playback-seek"
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      step="0.1"
+                      value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
+                      onChange={(e) => { void handleSeek(parseFloat(e.target.value)); }}
+                      aria-label="Playback position"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                  </div>
+                  <div className="flex justify-between px-1.5">
+                    <span className="text-[10px] font-black tabular-nums text-indigo-600/80 tracking-tight">{formatTime(player.currentTime)}</span>
+                    <span className="text-[10px] font-black tabular-nums text-gray-400/80 tracking-tight">-{formatTime(Math.max(0, player.duration - player.currentTime))}</span>
+                  </div>
+                </div>
+
+                {showSpeedControls && (
+                  <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
+                    </div>
+                    <input
+                      id="player-speed-slider"
+                      name="player-speed-slider"
+                      type="range"
+                      min="0.4"
+                      max="2.0"
+                      step="0.1"
+                      value={playbackRate}
+                      onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
+                      className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+                )}
+
+                {activeEpisodeBookmarks.length > 0 && (
+                  <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('bookmarks_title')}</span>
+                      <span className="text-[10px] font-bold text-gray-400">{activeEpisodeBookmarks.length}</span>
+                    </div>
+                    <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                      {activeEpisodeBookmarks.map((bookmark) => (
+                        <button
+                          key={bookmark.id}
+                          onClick={() => { if (player.activeEpisode) void jumpToEpisodeTime(player.activeEpisode, bookmark.time); }}
+                          className="shrink-0 rounded-full bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-600 transition-colors hover:bg-indigo-100"
+                        >
+                          {formatTime(bookmark.time)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 truncate mr-6 text-left">
+                    <h4 className="text-[13px] font-black truncate text-gray-800 tracking-tight leading-tight">{player.activeEpisode.title}</h4>
+                    <div className="flex items-center gap-2.5 mt-0.5">
+                      <span className="text-[8px] font-black uppercase text-indigo-500/70 tracking-widest">{t('ai_voice_mode')}</span>
+                      {player.activeEpisode.generationStatus === 'processing' && (
+                        <span className="text-[8px] bg-indigo-50/50 text-indigo-600/70 px-2 py-0.5 rounded-full font-black border border-indigo-100/50">
+                          {t('creating_podcast')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5">
+                    <button onClick={() => { void handleSkip(-15); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                      <span className="text-lg">↺</span>
+                      <span className="mt-[-4px]">15</span>
+                    </button>
+                    <button 
+                      onClick={() => { void handleTogglePlay(); }} 
+                      className="w-14 h-14 bg-indigo-600 text-white rounded-[1.75rem] flex items-center justify-center text-xl shadow-[0_10px_25px_-5px_rgba(79,70,229,0.4)] active:scale-95 transition-all relative hover:bg-indigo-700"
+                    >
+                      {isLoadingChunk ? (
+                        <div className="w-5 h-5 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        player.isPlaying ? '❚❚' : '▶'
+                      )}
+                    </button>
+                    <button onClick={() => { void handleSkip(30); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                      <span className="text-lg">↻</span>
+                      <span className="mt-[-4px]">30</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2616,7 +2733,7 @@ const App: React.FC = () => {
                 {resolvedModalNotes ? (
                   <>
                     <section className="rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-500 to-sky-500 p-6 text-white shadow-lg">
-                      <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{t('notes_title')}</p>
+                      <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{notesLabels.summary}</p>
                       <h4 className="mt-2 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
                       <p className="mt-3 text-sm leading-relaxed text-white/85">{resolvedModalNotes.summary}</p>
                     </section>
