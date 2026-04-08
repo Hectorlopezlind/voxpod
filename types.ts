@@ -1,4 +1,3 @@
-
 export enum VoiceName {
   Kore = 'Kore',
   Puck = 'Puck',
@@ -36,6 +35,7 @@ export interface PodcastEpisode {
   text: string;
   notes?: EpisodeNotes | string;
   bookmarks?: EpisodeBookmark[];
+  categories?: string[];
   date: number;
   voice: string;
   audioBlobId: string; // Base ID for chunks: {id}_0, {id}_1...

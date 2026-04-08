@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
 import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
+import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
 import { 
   initAudioElement, 
   loadAudioFromBuffer, 
@@ -111,7 +112,19 @@ const EN_TRANSLATIONS = {
   speed_toggle_show: 'Show speed',
   speed_toggle_hide: 'Hide speed',
   player_hide: 'Hide player',
-  player_show: 'Show player'
+  player_show: 'Show player',
+  categories_title: 'Categories',
+  category_placeholder: 'politics, novels, history',
+  category_hint: 'Separate categories with commas.',
+  save_categories_btn: 'Save categories',
+  edit_categories_btn: 'Categories',
+  all_categories: 'All',
+  sort_label: 'Sort',
+  sort_newest: 'Newest',
+  sort_oldest: 'Oldest',
+  sort_title: 'Title',
+  uncategorized_label: 'Uncategorized',
+  empty_category_filter: 'No audio in this category yet.'
 } as const;
 
 type SupportedLanguage = 'en' | 'sv';
@@ -168,7 +181,19 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     speed_toggle_show: 'Visa hastighet',
     speed_toggle_hide: 'Göm hastighet',
     player_hide: 'Göm spelare',
-    player_show: 'Visa spelare'
+    player_show: 'Visa spelare',
+    categories_title: 'Kategorier',
+    category_placeholder: 'politik, romaner, historia',
+    category_hint: 'Separera kategorier med kommatecken.',
+    save_categories_btn: 'Spara kategorier',
+    edit_categories_btn: 'Kategorier',
+    all_categories: 'Alla',
+    sort_label: 'Sortera',
+    sort_newest: 'Nyast',
+    sort_oldest: 'Äldst',
+    sort_title: 'Titel',
+    uncategorized_label: 'Utan kategori',
+    empty_category_filter: 'Inga ljudfiler i den här kategorin än.'
   }
 };
 
@@ -200,9 +225,12 @@ type ImportSource = 'document' | 'camera' | 'images';
 type ImportSessionState = {
   id: string;
   source: ImportSource;
+  baseText: string;
   text: string;
   isComplete: boolean;
 };
+
+type LibrarySortMode = 'newest' | 'oldest' | 'title';
 
 type LiveGenerationState = {
   sourceSessionId: string;
@@ -260,8 +288,6 @@ const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
-const TEXT_DOCUMENT_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
-const DOCUMENT_UPLOAD_ACCEPT = 'application/pdf,.pdf,text/plain,.txt,text/markdown,.md,.markdown';
 
 const sortFilesForReading = (files: File[]) =>
   files
@@ -373,20 +399,13 @@ const readFileAsBase64 = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-const getFileExtension = (fileName: string) => {
-  const parts = fileName.toLowerCase().split('.');
-  return parts.length > 1 ? parts.pop() ?? '' : '';
-};
-
-const isTextDocumentFile = (file: File) => {
-  const extension = getFileExtension(file.name);
-  return file.type.startsWith('text/') || TEXT_DOCUMENT_EXTENSIONS.has(extension);
-};
-
 const estimateDocumentScanSeconds = (file: File) =>
   isTextDocumentFile(file)
     ? clamp(Math.ceil(file.size / 250_000), 2, 8)
     : estimatePdfScanSeconds(file.size);
+
+const estimateDocumentBatchScanSeconds = (files: File[]) =>
+  clamp(files.reduce((total, file) => total + estimateDocumentScanSeconds(file), 0), 2, 180);
 
 const buildImportCacheKey = (file: File) =>
   [
@@ -398,33 +417,19 @@ const buildImportCacheKey = (file: File) =>
     file.type || 'unknown'
   ].join(':');
 
-const streamLocalTextFile = async (
-  file: File,
-  onChunk: (textChunk: string) => void
-) => {
-  if (typeof file.stream === 'function') {
-    const reader = file.stream().getReader();
-    const decoder = new TextDecoder();
+const composeImportedText = (baseText: string, importedText: string) => {
+  const trimmedBaseText = baseText.replace(/\s+$/g, '');
+  const trimmedImportedText = importedText.replace(/^\s+/g, '');
 
-    while (true) {
-      const { value, done } = await reader.read();
-      const textChunk = decoder.decode(value, { stream: !done });
-      if (textChunk) {
-        onChunk(textChunk);
-      }
-      if (done) {
-        break;
-      }
-    }
-
-    const trailingText = decoder.decode();
-    if (trailingText) {
-      onChunk(trailingText);
-    }
-    return;
+  if (!trimmedBaseText) {
+    return importedText;
   }
 
-  onChunk(await file.text());
+  if (!trimmedImportedText) {
+    return baseText;
+  }
+
+  return `${trimmedBaseText}\n\n${trimmedImportedText}`;
 };
 
 const splitParagraphIntoSentences = (paragraph: string) =>
@@ -707,6 +712,43 @@ const polishEpisodeNotes = (
 const getSummaryAudioBlobId = (episode: PodcastEpisode) =>
   `${episode.audioBlobId}_summary`;
 
+const normalizeCategoryName = (value: string) =>
+  value.replace(/\s+/g, ' ').trim();
+
+const parseCategoryInput = (value: string) => {
+  const uniqueCategories = new Map<string, string>();
+
+  value
+    .split(',')
+    .map(normalizeCategoryName)
+    .filter(Boolean)
+    .forEach((category) => {
+      const key = category.toLocaleLowerCase();
+      if (!uniqueCategories.has(key)) {
+        uniqueCategories.set(key, category);
+      }
+    });
+
+  return Array.from(uniqueCategories.values()).slice(0, 8);
+};
+
+const getEpisodeCategories = (episode: PodcastEpisode) =>
+  episode.categories ?? [];
+
+const sortLibraryEpisodes = (episodes: PodcastEpisode[], mode: LibrarySortMode) => {
+  const nextEpisodes = [...episodes];
+
+  switch (mode) {
+    case 'oldest':
+      return nextEpisodes.sort((a, b) => a.date - b.date);
+    case 'title':
+      return nextEpisodes.sort((a, b) => imageNameCollator.compare(a.title, b.title));
+    case 'newest':
+    default:
+      return nextEpisodes.sort((a, b) => b.date - a.date);
+  }
+};
+
 const toSpeechSentence = (value: string) => {
   const normalized = normalizeInlineText(value);
   if (!normalized) return '';
@@ -783,6 +825,10 @@ const App: React.FC = () => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
   const [showSpeedControls, setShowSpeedControls] = useState(false);
+  const [editingCategoryEpisodeId, setEditingCategoryEpisodeId] = useState<string | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState('');
+  const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>('newest');
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
@@ -1022,12 +1068,13 @@ const App: React.FC = () => {
     const session: ImportSessionState = {
       id: crypto.randomUUID(),
       source,
+      baseText: inputText,
       text: '',
       isComplete: false,
     };
 
     importSessionRef.current = session;
-    setInputText('');
+    setInputText(composeImportedText(session.baseText, session.text));
     return session;
   };
 
@@ -1036,7 +1083,7 @@ const App: React.FC = () => {
     if (!session || session.id !== sessionId) return;
 
     session.text = nextText;
-    setInputText(nextText);
+    setInputText(composeImportedText(session.baseText, nextText));
 
     if (liveGenerationRef.current?.sourceSessionId === sessionId) {
       void pumpLiveGeneration();
@@ -1224,6 +1271,18 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (activeCategoryFilter === 'all') return;
+
+    const filterStillExists = library.some(episode =>
+      getEpisodeCategories(episode).includes(activeCategoryFilter)
+    );
+
+    if (!filterStillExists) {
+      setActiveCategoryFilter('all');
+    }
+  }, [library, activeCategoryFilter]);
+
+  useEffect(() => {
     const el = initAudioElement();
     const handleEnd = () => {
       if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
@@ -1348,7 +1407,7 @@ const App: React.FC = () => {
           break;
         }
 
-        const trimmedText = source.text.trim();
+        const trimmedText = composeImportedText(source.baseText, source.text).trim();
         if (!trimmedText) {
           if (source.isComplete) {
             liveGenerationRef.current = null;
@@ -1391,6 +1450,7 @@ const App: React.FC = () => {
             text: trimmedText,
             notes: fallbackNotes,
             bookmarks: [],
+            categories: [],
             date: Date.now(),
             voice: live.voice,
             audioBlobId: live.episodeId,
@@ -1508,8 +1568,11 @@ const App: React.FC = () => {
 
     try {
       const activeImportSession = importSessionRef.current;
-      if (isScanning && activeImportSession && activeImportSession.text.trim()) {
-        const sourceText = activeImportSession.text.trim();
+      const activeImportText = activeImportSession
+        ? composeImportedText(activeImportSession.baseText, activeImportSession.text).trim()
+        : '';
+      if (isScanning && activeImportSession && activeImportText) {
+        const sourceText = activeImportText;
         const projectedChunks = Math.max(1, getImportChunkWindow(sourceText, activeImportSession.isComplete).projectedChunkCount);
 
         setGenerationProgress({ current: 0, total: projectedChunks + 1 });
@@ -1572,6 +1635,7 @@ const App: React.FC = () => {
         text: inputText,
         date: Date.now(),
         bookmarks: [],
+        categories: [],
         voice: selectedVoice,
         audioBlobId: id,
         chunkCount: chunks.length,
@@ -2010,6 +2074,10 @@ const App: React.FC = () => {
         setShowNotesModal(null);
       }
 
+      if (editingCategoryEpisodeId === episode.id) {
+        closeCategoryEditor();
+      }
+
       updateLibrary(prev => prev.filter(x => x.id !== episode.id));
     } catch (err) {
       setError("Kunde inte radera avsnittet.");
@@ -2204,6 +2272,77 @@ const App: React.FC = () => {
     }
   };
 
+  const processDocuments = async (
+    rawFiles: File[],
+    clearSource: () => void,
+  ) => {
+    if (rawFiles.length === 0) {
+      clearSource();
+      return;
+    }
+
+    const files = sortFilesForReading(rawFiles);
+    const importSession = startImportSession('document');
+    setScanSource('document');
+    setRetryNotice(null);
+    setScanSession({
+      startedAt: Date.now(),
+      totalItems: files.length,
+      completedItems: 0,
+      estimatedSeconds: estimateDocumentBatchScanSeconds(files)
+    });
+    await waitForNextPaint();
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const suffix = i < files.length - 1 ? '\n\n' : '';
+
+        try {
+          const cachedText = await readImportTextCache(file);
+          if (cachedText?.trim()) {
+            appendImportSessionText(importSession.id, cachedText);
+            if (suffix) {
+              appendImportSessionText(importSession.id, suffix);
+            }
+          } else if (isTextDocumentFile(file)) {
+            let extractedText = '';
+            await streamIntoImportSession(importSession.id, async (onChunk) => {
+              await streamLocalDocumentText(file, (textChunk) => {
+                extractedText += textChunk;
+                onChunk(textChunk);
+              });
+            }, { suffix });
+            await writeImportTextCache(file, extractedText);
+          } else {
+            const base64 = await readFileAsBase64(file);
+            let extractedText = '';
+            await streamIntoImportSession(importSession.id, async (onChunk) => {
+              await streamTextFromPdf(base64, (textChunk) => {
+                extractedText += textChunk;
+                onChunk(textChunk);
+              });
+            }, { suffix });
+            await writeImportTextCache(file, extractedText);
+          }
+          setRetryNotice(null);
+        } catch (err) {
+          throw new Error(`Dokument ${i + 1} misslyckades.`);
+        }
+
+        setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
+      }
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : 'Dokumentläsning misslyckades.');
+    } finally {
+      completeImportSession(importSession.id);
+      setScanSource(null);
+      setScanSession(null);
+      setRetryNotice(null);
+      clearSource();
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
@@ -2221,54 +2360,11 @@ const App: React.FC = () => {
   };
 
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const importSession = startImportSession('document');
-    setScanSource('document');
-    setRetryNotice(null);
-    setScanSession({
-      startedAt: Date.now(),
-      totalItems: 1,
-      completedItems: 0,
-      estimatedSeconds: estimateDocumentScanSeconds(file)
-    });
-    await waitForNextPaint();
-    try {
-      const cachedText = await readImportTextCache(file);
-      if (cachedText?.trim()) {
-        replaceImportSessionText(importSession.id, cachedText);
-      } else if (isTextDocumentFile(file)) {
-        let extractedText = '';
-        await streamIntoImportSession(importSession.id, async (onChunk) => {
-          await streamLocalTextFile(file, (textChunk) => {
-            extractedText += textChunk;
-            onChunk(textChunk);
-          });
-        });
-        await writeImportTextCache(file, extractedText);
-      } else {
-        const base64 = await readFileAsBase64(file);
-        let extractedText = '';
-        await streamIntoImportSession(importSession.id, async (onChunk) => {
-          await streamTextFromPdf(base64, (textChunk) => {
-            extractedText += textChunk;
-            onChunk(textChunk);
-          });
-        });
-        await writeImportTextCache(file, extractedText);
-      }
-      setRetryNotice(null);
-      setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "Dokumentläsning misslyckades.");
-    } finally {
-      completeImportSession(importSession.id);
-      setScanSource(null);
-      setScanSession(null);
-      setRetryNotice(null);
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await processDocuments(Array.from(fileList) as File[], () => {
       e.target.value = '';
-    }
+    });
   };
 
   const handleTranslate = async (lang: string) => {
@@ -2339,13 +2435,45 @@ const App: React.FC = () => {
   const activeEpisodeBookmarks = player.activeEpisode?.bookmarks ?? [];
   const activeImportSession = importSessionRef.current;
   const canGenerateFromImportSession = (() => {
-    if (!isScanning || !activeImportSession?.text.trim()) return false;
-    const { allChunks, finalizedCount } = getImportChunkWindow(activeImportSession.text.trim(), activeImportSession.isComplete);
+    if (!isScanning || !activeImportSession) return false;
+    const sourceText = composeImportedText(activeImportSession.baseText, activeImportSession.text).trim();
+    if (!sourceText) return false;
+    const { allChunks, finalizedCount } = getImportChunkWindow(sourceText, activeImportSession.isComplete);
     return finalizedCount >= getRequiredLiveReadyChunks(allChunks, finalizedCount, activeImportSession.isComplete);
   })();
   const isInputLocked = isBusy || isScanning;
   const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
   const notesLabels = getNotesLabels(userLang);
+  const libraryCategories = Array.from<string>(
+    new Set(library.flatMap(episode => getEpisodeCategories(episode)))
+  ).sort((a, b) => imageNameCollator.compare(a, b));
+  const displayedLibrary = sortLibraryEpisodes(
+    library.filter(episode =>
+      activeCategoryFilter === 'all' || getEpisodeCategories(episode).includes(activeCategoryFilter)
+    ),
+    librarySortMode
+  );
+  const categoryEditorEpisode = editingCategoryEpisodeId
+    ? library.find(episode => episode.id === editingCategoryEpisodeId) ?? null
+    : null;
+
+  const openCategoryEditor = (episode: PodcastEpisode) => {
+    setEditingCategoryEpisodeId(episode.id);
+    setCategoryDraft(getEpisodeCategories(episode).join(', '));
+  };
+
+  const closeCategoryEditor = () => {
+    setEditingCategoryEpisodeId(null);
+    setCategoryDraft('');
+  };
+
+  const saveEpisodeCategories = () => {
+    if (!editingCategoryEpisodeId) return;
+    patchEpisode(editingCategoryEpisodeId, {
+      categories: parseCategoryInput(categoryDraft),
+    });
+    closeCategoryEditor();
+  };
 
   return (
     <div
@@ -2388,7 +2516,7 @@ const App: React.FC = () => {
           <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
           <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
           <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
-          <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} className="hidden" aria-label={t('docs_btn')} />
+          <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
         </div>
         <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
           <div className="relative">
@@ -2500,8 +2628,50 @@ const App: React.FC = () => {
 
         <section className="space-y-4">
           <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
+          <div className="rounded-[2rem] border border-gray-100 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('sort_label')}</span>
+              <select
+                value={librarySortMode}
+                onChange={(e) => setLibrarySortMode(e.target.value as LibrarySortMode)}
+                className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-black text-gray-700"
+              >
+                <option value="newest">{t('sort_newest')}</option>
+                <option value="oldest">{t('sort_oldest')}</option>
+                <option value="title">{t('sort_title')}</option>
+              </select>
+            </div>
+
+            {libraryCategories.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  onClick={() => setActiveCategoryFilter('all')}
+                  className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
+                    activeCategoryFilter === 'all'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-50 text-gray-600 border border-gray-100'
+                  }`}
+                >
+                  {t('all_categories')}
+                </button>
+                {libraryCategories.map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setActiveCategoryFilter(category)}
+                    className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
+                      activeCategoryFilter === category
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-50 text-gray-600 border border-gray-100'
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid gap-3 overflow-hidden">
-            {library.map((ep) => (
+            {displayedLibrary.map((ep) => (
               <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`w-full min-w-0 p-4 rounded-[2rem] border transition-all flex items-center gap-3 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white border-gray-100 shadow-sm'}`}>
                 <div className={`w-10 h-10 shrink-0 rounded-2xl flex items-center justify-center font-bold ${player.activeEpisode?.id === ep.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
                   ✨
@@ -2511,8 +2681,32 @@ const App: React.FC = () => {
                   <p className={`text-[9px] uppercase font-bold ${player.activeEpisode?.id === ep.id ? 'text-white/60' : 'text-gray-400'}`}>
                     {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(getEpisodeCategories(ep).length > 0 ? getEpisodeCategories(ep) : [t('uncategorized_label')]).map((category) => (
+                      <span
+                        key={`${ep.id}-${category}`}
+                        className={`rounded-full px-2.5 py-1 text-[9px] font-black ${
+                          player.activeEpisode?.id === ep.id
+                            ? 'bg-white/15 text-white/85'
+                            : 'bg-indigo-50 text-indigo-600'
+                        }`}
+                      >
+                        {category}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openCategoryEditor(ep);
+                    }}
+                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
+                    title={t('edit_categories_btn')}
+                  >
+                    🏷️
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); void handlePlaySummary(ep); }}
                     className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
@@ -2549,6 +2743,9 @@ const App: React.FC = () => {
             ))}
             {library.length === 0 && (
               <p className="text-center py-10 text-[10px] font-bold text-gray-300 uppercase tracking-widest border-2 border-dashed border-gray-100 rounded-[2rem]">{t('empty_library')}</p>
+            )}
+            {library.length > 0 && displayedLibrary.length === 0 && (
+              <p className="text-center py-10 text-[10px] font-bold text-gray-300 uppercase tracking-widest border-2 border-dashed border-gray-100 rounded-[2rem]">{t('empty_category_filter')}</p>
             )}
           </div>
         </section>
@@ -2777,6 +2974,51 @@ const App: React.FC = () => {
               <button 
                 onClick={() => setShowNotesModal(null)}
                 className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+              >
+                {t('close_btn')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {categoryEditorEpisode && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 space-y-5">
+              <div className="flex justify-between items-center gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-black text-gray-800">{t('categories_title')}</h3>
+                  <p className="mt-1 truncate text-xs font-bold text-gray-400">{categoryEditorEpisode.title}</p>
+                </div>
+                <button onClick={closeCategoryEditor} className="text-2xl text-gray-400 hover:text-gray-600">×</button>
+              </div>
+
+              <div className="rounded-3xl border border-gray-100 bg-gray-50 p-5 space-y-3">
+                <label htmlFor="episode-categories" className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">
+                  {t('categories_title')}
+                </label>
+                <input
+                  id="episode-categories"
+                  name="episode-categories"
+                  value={categoryDraft}
+                  onChange={(e) => setCategoryDraft(e.target.value)}
+                  placeholder={t('category_placeholder')}
+                  className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+                <p className="text-xs leading-relaxed text-gray-500">{t('category_hint')}</p>
+              </div>
+
+              <button
+                onClick={saveEpisodeCategories}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+              >
+                {t('save_categories_btn')}
+              </button>
+
+              <button
+                onClick={closeCategoryEditor}
+                className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all"
               >
                 {t('close_btn')}
               </button>
