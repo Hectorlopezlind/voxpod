@@ -2964,14 +2964,14 @@ const App: React.FC = () => {
 
   return (
     <div
-      className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900"
+      className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900 antialiased"
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
     >
-      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/75 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-white/70 bg-white/95">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col text-left">
-            <h1 className="text-2xl font-black tracking-[-0.08em] text-indigo-600 sm:text-3xl">VoxPod AI</h1>
-            <span className="mt-1 text-[10px] font-black uppercase tracking-[0.32em] text-slate-400">{t('app_subtitle')}</span>
+            <h1 className="text-[1.8rem] font-extrabold tracking-tight text-indigo-600 sm:text-[2.1rem]">VoxPod AI</h1>
+            <span className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.24em] text-slate-400">{t('app_subtitle')}</span>
           </div>
 
           <div className="hidden flex-wrap items-center gap-2 lg:flex">
@@ -3007,7 +3007,7 @@ const App: React.FC = () => {
           <div className="relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8">
             <div className="text-left">
               <p className="text-[10px] font-black uppercase tracking-[0.32em] text-white/55">{t('hero_kicker')}</p>
-              <h2 className="mt-3 max-w-xl text-3xl font-black tracking-[-0.08em] text-white sm:text-4xl">
+              <h2 className="mt-3 max-w-3xl text-3xl font-extrabold leading-[1.02] tracking-tight text-white sm:text-[2.75rem]">
                 {t('hero_title')}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72">
@@ -3143,14 +3143,14 @@ const App: React.FC = () => {
           </section>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-start-2">
-          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
+        <div className="grid auto-rows-min gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-start-2 lg:self-start">
+          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
             {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
           </button>
-          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
+          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
             {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
+          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
             {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
           <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
