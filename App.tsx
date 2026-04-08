@@ -3143,25 +3143,26 @@ const App: React.FC = () => {
           </section>
         )}
 
-        <div className="grid auto-rows-min gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-start-2 lg:self-start">
-          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-            {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
-          </button>
-          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-            {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-            {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
-          </button>
-          <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
-          <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
-          <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
-          <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
-          <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
-          <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
-        </div>
-        <section className="lg:col-start-1 lg:row-start-3 bg-white/90 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
-          <div className="relative">
+        <div className="space-y-4 lg:col-start-1 lg:row-start-2">
+          <div className="grid auto-rows-min gap-3 sm:grid-cols-3">
+            <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
+              {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
+            </button>
+            <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
+              {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
+              {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
+            </button>
+            <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
+            <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
+            <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
+            <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
+            <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
+            <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
+          </div>
+          <section className="bg-white/90 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
+            <div className="relative">
             <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
             <textarea
               id="podcast-text"
@@ -3228,45 +3229,46 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <div className="grid grid-cols-1 gap-3">
-            <div className="space-y-1">
-              <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
-              <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isInputLocked} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
-                {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
-              </select>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-1">
+                <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
+                <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isInputLocked} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
+                  {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
+                </select>
+              </div>
             </div>
-          </div>
 
-          <button onClick={handleGenerate} disabled={isGenerateDisabled} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
-            {activePrimaryButton && (
-              <div 
-                className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-500" 
-                style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
-              />
-            )}
-            <div className="relative z-10">
-              {activePrimaryButton ? (
-                <>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                      {activePrimaryButton.label}
-                    </span>
-                    <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
-                  </div>
-                  {retryNotice && (
-                    <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
-                      {retryNotice}
-                    </div>
-                  )}
-                </>
-              ) : (
-                t('generate_btn')
+            <button onClick={handleGenerate} disabled={isGenerateDisabled} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
+              {activePrimaryButton && (
+                <div 
+                  className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-500" 
+                  style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
+                />
               )}
-            </div>
-          </button>
+              <div className="relative z-10">
+                {activePrimaryButton ? (
+                  <>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                        {activePrimaryButton.label}
+                      </span>
+                      <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
+                    </div>
+                    {retryNotice && (
+                      <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
+                        {retryNotice}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  t('generate_btn')
+                )}
+              </div>
+            </button>
 
-        </section>
+          </section>
+        </div>
 
         <section className="space-y-4 lg:col-start-2 lg:row-start-3 lg:self-start">
           <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
