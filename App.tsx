@@ -3,9 +3,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
 import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
-import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
+import { saveAudioBlob, getAudioBlob, deleteAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
 import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
+import {
+  deleteCloudEpisode,
+  downloadCloudEpisodeChunk,
+  downloadCloudSummaryAudio,
+  fetchCloudEpisodes,
+  isCloudPermissionError,
+  isMissingCloudSchemaError,
+  uploadCloudEpisodeChunk,
+  uploadCloudSummaryAudio,
+  upsertCloudEpisodes,
+} from './services/cloudLibraryService';
 import { 
   initAudioElement, 
   loadAudioFromBuffer, 
@@ -128,8 +139,8 @@ const EN_TRANSLATIONS = {
   uncategorized_label: 'Uncategorized',
   empty_category_filter: 'No audio in this category yet.',
   auth_title: 'Account',
-  auth_subtitle_signed_out: 'Sign in to prepare cloud sync across devices.',
-  auth_subtitle_signed_in: 'You are signed in. Library sync can be connected next.',
+  auth_subtitle_signed_out: 'Sign in to keep your audio private and available across devices.',
+  auth_subtitle_signed_in: 'You are signed in. New audio can sync privately to your account.',
   auth_email_label: 'Email',
   auth_password_label: 'Password',
   auth_sign_in_tab: 'Sign in',
@@ -142,7 +153,16 @@ const EN_TRANSLATIONS = {
   auth_success_signed_out: 'Signed out.',
   auth_check_email: 'Account created. Check your email to verify it before signing in if verification is enabled.',
   auth_email_confirmed: 'Account created and signed in.',
-  auth_loading: 'Connecting...'
+  auth_loading: 'Connecting...',
+  cloud_status_ready: 'Private cloud sync is active for this account.',
+  cloud_status_syncing: 'Syncing your private audio library...',
+  cloud_status_signed_out: 'Sign in to save audio privately and open it on any signed-in device.',
+  cloud_status_setup_needed: 'Run the Supabase SQL setup before cloud sync can protect your files.',
+  cloud_status_permission_error: 'Cloud sync is blocked by missing Supabase permissions or bucket rules.',
+  hero_kicker: 'Private AI Audio Workspace',
+  hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
+  hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
+  runtime_label: 'Runtime'
 } as const;
 
 type SupportedLanguage = 'en' | 'sv';
@@ -213,8 +233,8 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     uncategorized_label: 'Utan kategori',
     empty_category_filter: 'Inga ljudfiler i den här kategorin än.',
     auth_title: 'Konto',
-    auth_subtitle_signed_out: 'Logga in för att förbereda molnsynk mellan enheter.',
-    auth_subtitle_signed_in: 'Du är inloggad. Bibliotekssynk kan kopplas på härnäst.',
+    auth_subtitle_signed_out: 'Logga in för att hålla ditt ljud privat och tillgängligt mellan enheter.',
+    auth_subtitle_signed_in: 'Du är inloggad. Nya ljudfiler kan nu synkas privat till ditt konto.',
     auth_email_label: 'E-post',
     auth_password_label: 'Lösenord',
     auth_sign_in_tab: 'Logga in',
@@ -227,7 +247,16 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     auth_success_signed_out: 'Utloggad.',
     auth_check_email: 'Kontot skapades. Kontrollera din e-post om verifiering krävs innan du loggar in.',
     auth_email_confirmed: 'Kontot skapades och du är nu inloggad.',
-    auth_loading: 'Ansluter...'
+    auth_loading: 'Ansluter...',
+    cloud_status_ready: 'Privat molnsynk är aktiv för det här kontot.',
+    cloud_status_syncing: 'Synkar ditt privata ljudbibliotek...',
+    cloud_status_signed_out: 'Logga in för att spara ljud privat och öppna det på alla enheter där du är inloggad.',
+    cloud_status_setup_needed: 'Kör SQL-filen för Supabase innan molnsynken kan skydda dina filer.',
+    cloud_status_permission_error: 'Molnsynken blockeras av saknade Supabase-rättigheter eller bucket-regler.',
+    hero_kicker: 'Privat AI-ljudstudio',
+    hero_title: 'Gör dokument, bilder och anteckningar till ett bibliotek som följer dig mellan enheter.',
+    hero_body: 'Skapa poddar från text, PDF, kamerabilder och bildserier. När du är inloggad kan biblioteket kopplas till ditt Supabase-konto i stället för bara den här webbläsaren.',
+    runtime_label: 'Speltid'
   }
 };
 
@@ -322,12 +351,60 @@ const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
 const LIVE_GENERATION_EARLY_START_CHARACTERS = 900;
 const IMPORT_STREAM_FLUSH_CHARACTERS = 80;
 const IMPORT_TEXT_CACHE_VERSION = 1;
-const LIBRARY_STORAGE_KEY = 'voxpod_library';
+const LEGACY_LIBRARY_STORAGE_KEY = 'voxpod_library';
+const GUEST_LIBRARY_STORAGE_KEY = 'voxpod_library_guest';
+const USER_LIBRARY_STORAGE_KEY_PREFIX = 'voxpod_library_user:';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
 const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
+
+const getScopedLibraryStorageKey = (userId?: string | null) =>
+  userId ? `${USER_LIBRARY_STORAGE_KEY_PREFIX}${userId}` : GUEST_LIBRARY_STORAGE_KEY;
+
+const parsePersistedLibrary = (value: string | null) => {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as PodcastEpisode[] : [];
+  } catch (error) {
+    console.error('Kunde inte läsa sparat bibliotek', error);
+    return [];
+  }
+};
+
+const readPersistedLibrary = (userId?: string | null) => {
+  const scopedKey = getScopedLibraryStorageKey(userId);
+  const scopedValue = localStorage.getItem(scopedKey);
+  if (scopedValue !== null) {
+    return parsePersistedLibrary(scopedValue);
+  }
+
+  if (userId) {
+    return [];
+  }
+
+  const legacyValue = localStorage.getItem(LEGACY_LIBRARY_STORAGE_KEY);
+  const legacyLibrary = parsePersistedLibrary(legacyValue);
+  if (legacyValue !== null) {
+    localStorage.setItem(GUEST_LIBRARY_STORAGE_KEY, JSON.stringify(legacyLibrary));
+    localStorage.removeItem(LEGACY_LIBRARY_STORAGE_KEY);
+  }
+
+  return legacyLibrary;
+};
+
+const writePersistedLibrary = (episodes: PodcastEpisode[], userId?: string | null) => {
+  localStorage.setItem(getScopedLibraryStorageKey(userId), JSON.stringify(episodes));
+
+  if (!userId) {
+    localStorage.removeItem(LEGACY_LIBRARY_STORAGE_KEY);
+  }
+};
 
 const sortFilesForReading = (files: File[]) =>
   files
@@ -819,6 +896,23 @@ const normalizeAuthErrorMessage = (message: string, userLang: SupportedLanguage)
   return message;
 };
 
+const normalizeCloudSyncErrorMessage = (error: unknown, userLang: SupportedLanguage) => {
+  if (isMissingCloudSchemaError(error)) {
+    return userLang === 'sv'
+      ? 'Supabase-tabellen och RLS-reglerna saknas. Kör filen supabase/voxpod_cloud_sync.sql i Supabase SQL Editor.'
+      : 'The Supabase table and RLS rules are missing. Run supabase/voxpod_cloud_sync.sql in the Supabase SQL Editor.';
+  }
+
+  if (isCloudPermissionError(error)) {
+    return userLang === 'sv'
+      ? 'Supabase blockerar åtkomst. Kontrollera att Audio-bucketen är privat och att RLS-policys från SQL-filen är aktiva.'
+      : 'Supabase is blocking access. Make sure the Audio bucket is private and the SQL file RLS policies are active.';
+  }
+
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return message || (userLang === 'sv' ? 'Molnsynken misslyckades.' : 'Cloud sync failed.');
+};
+
 const toSpeechSentence = (value: string) => {
   const normalized = normalizeInlineText(value);
   if (!normalized) return '';
@@ -905,7 +999,17 @@ const App: React.FC = () => {
   const [authSession, setAuthSession] = useState<Session | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
+  const [cloudFeedback, setCloudFeedback] = useState<AuthFeedback | null>(
+    isSupabaseConfigured
+      ? {
+          kind: 'info',
+          message: t('cloud_status_signed_out'),
+        }
+      : null
+  );
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
@@ -937,6 +1041,7 @@ const App: React.FC = () => {
   const summaryRequestRef = useRef(0);
   const libraryRef = useRef<PodcastEpisode[]>([]);
   const libraryPersistTimeoutRef = useRef<number | null>(null);
+  const cloudSyncTimeoutRef = useRef<number | null>(null);
   const hasHydratedLibraryRef = useRef(false);
   const importSessionRef = useRef<ImportSessionState | null>(null);
   const liveGenerationRef = useRef<LiveGenerationState | null>(null);
@@ -994,6 +1099,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!supabase) {
+      setIsAuthReady(true);
       return;
     }
 
@@ -1009,11 +1115,13 @@ const App: React.FC = () => {
           kind: 'error',
           message: normalizeAuthErrorMessage(error.message, userLang),
         });
+        setIsAuthReady(true);
         return;
       }
 
       setAuthSession(data.session);
       setAuthUser(data.session?.user ?? null);
+      setIsAuthReady(true);
     };
 
     void bootstrapSession();
@@ -1024,6 +1132,7 @@ const App: React.FC = () => {
       if (!isMounted) return;
       setAuthSession(session);
       setAuthUser(session?.user ?? null);
+      setIsAuthReady(true);
     });
 
     return () => {
@@ -1161,8 +1270,39 @@ const App: React.FC = () => {
     }
   };
 
+  const setCloudFeedbackMessage = (feedback: AuthFeedback | null) => {
+    setCloudFeedback(feedback);
+  };
+
+  const handleCloudSyncError = (cloudError: unknown) => {
+    console.error('Supabase cloud sync misslyckades', cloudError);
+    setIsCloudSyncing(false);
+    setCloudFeedbackMessage({
+      kind: 'error',
+      message: normalizeCloudSyncErrorMessage(cloudError, userLang),
+    });
+  };
+
+  const markCloudSyncing = () => {
+    if (!authUser) return;
+    setIsCloudSyncing(true);
+    setCloudFeedbackMessage({
+      kind: 'info',
+      message: t('cloud_status_syncing'),
+    });
+  };
+
+  const markCloudReady = () => {
+    if (!authUser) return;
+    setIsCloudSyncing(false);
+    setCloudFeedbackMessage({
+      kind: 'success',
+      message: t('cloud_status_ready'),
+    });
+  };
+
   const persistLibrarySnapshot = (episodes: PodcastEpisode[]) => {
-    localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(episodes));
+    writePersistedLibrary(episodes, authUser?.id);
   };
 
   const flushLibraryPersistence = () => {
@@ -1179,6 +1319,52 @@ const App: React.FC = () => {
     libraryRef.current = nextLibrary;
     setLibrary(nextLibrary);
     return nextLibrary;
+  };
+
+  const uploadEpisodeChunkToCloud = (audioBlobId: string, index: number, wavBuffer: ArrayBuffer) => {
+    const userId = authUser?.id;
+    if (!userId) return;
+
+    markCloudSyncing();
+    void uploadCloudEpisodeChunk(userId, audioBlobId, index, wavBuffer)
+      .then(() => {
+        markCloudReady();
+      })
+      .catch(handleCloudSyncError);
+  };
+
+  const uploadSummaryToCloud = (audioBlobId: string, wavBuffer: ArrayBuffer) => {
+    const userId = authUser?.id;
+    if (!userId) return;
+
+    markCloudSyncing();
+    void uploadCloudSummaryAudio(userId, audioBlobId, wavBuffer)
+      .then(() => {
+        markCloudReady();
+      })
+      .catch(handleCloudSyncError);
+  };
+
+  const loadChunkFromLocalOrCloud = async (episode: PodcastEpisode, index: number) => {
+    const cacheKey = `${episode.audioBlobId}_${index}`;
+    let data = chunkCache.current.get(cacheKey);
+    if (!data) {
+      data = await getAudioBlob(cacheKey) ?? undefined;
+    }
+
+    if (!data && authUser?.id) {
+      data = await downloadCloudEpisodeChunk(authUser.id, episode.audioBlobId, index) ?? undefined;
+      if (data) {
+        await saveAudioBlob(cacheKey, data);
+      }
+    }
+
+    if (data) {
+      chunkCache.current.set(cacheKey, data);
+      return data;
+    }
+
+    return null;
   };
 
   const startImportSession = (source: ImportSource) => {
@@ -1342,22 +1528,59 @@ const App: React.FC = () => {
   }, [player.activeEpisode, player.currentChunkIndex]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(LIBRARY_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsedLibrary = JSON.parse(saved) as PodcastEpisode[];
-        libraryRef.current = parsedLibrary;
-        setLibrary(parsedLibrary);
-      } catch (e) {
-        console.error(e);
-        libraryRef.current = [];
-      }
-    } else {
-      libraryRef.current = [];
+    if (!isAuthReady) return;
+
+    const cachedLibrary = readPersistedLibrary(authUser?.id);
+    libraryRef.current = cachedLibrary;
+    setLibrary(cachedLibrary);
+    hasHydratedLibraryRef.current = true;
+
+    if (!authUser || !supabase) {
+      setIsCloudSyncing(false);
+      setCloudFeedbackMessage(
+        isSupabaseConfigured
+          ? {
+              kind: 'info',
+              message: t('cloud_status_signed_out'),
+            }
+          : null
+      );
+      return;
     }
 
-    hasHydratedLibraryRef.current = true;
-  }, []);
+    let cancelled = false;
+    setIsCloudSyncing(true);
+    setCloudFeedbackMessage({
+      kind: 'info',
+      message: t('cloud_status_syncing'),
+    });
+
+    void (async () => {
+      try {
+        const remoteLibrary = await fetchCloudEpisodes(authUser.id);
+        if (cancelled) return;
+
+        libraryRef.current = remoteLibrary;
+        setLibrary(remoteLibrary);
+        writePersistedLibrary(remoteLibrary, authUser.id);
+        setCloudFeedbackMessage({
+          kind: 'success',
+          message: t('cloud_status_ready'),
+        });
+      } catch (cloudError) {
+        if (cancelled) return;
+        handleCloudSyncError(cloudError);
+      } finally {
+        if (!cancelled) {
+          setIsCloudSyncing(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, isAuthReady, userLang]);
 
   useEffect(() => {
     if (!hasHydratedLibraryRef.current) return;
@@ -1386,6 +1609,31 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasHydratedLibraryRef.current || !authUser || !isAuthReady) return;
+
+    if (cloudSyncTimeoutRef.current) {
+      window.clearTimeout(cloudSyncTimeoutRef.current);
+    }
+
+    cloudSyncTimeoutRef.current = window.setTimeout(() => {
+      markCloudSyncing();
+      void upsertCloudEpisodes(authUser.id, libraryRef.current)
+        .then(() => {
+          markCloudReady();
+        })
+        .catch(handleCloudSyncError);
+      cloudSyncTimeoutRef.current = null;
+    }, 900);
+
+    return () => {
+      if (cloudSyncTimeoutRef.current) {
+        window.clearTimeout(cloudSyncTimeoutRef.current);
+        cloudSyncTimeoutRef.current = null;
+      }
+    };
+  }, [library, authUser?.id, isAuthReady, userLang]);
 
   useEffect(() => {
     if (activeCategoryFilter === 'all') return;
@@ -1555,6 +1803,7 @@ const App: React.FC = () => {
             const { wavBuffer, duration } = await buildChunkAudio(allChunks[index]);
             await saveAudioBlob(`${live.episodeId}_${index}`, wavBuffer);
             chunkCache.current.set(`${live.episodeId}_${index}`, wavBuffer);
+            uploadEpisodeChunkToCloud(live.episodeId, index, wavBuffer);
             live.generatedDurations[index] = duration;
             live.generatedCount = index + 1;
             syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
@@ -1605,6 +1854,7 @@ const App: React.FC = () => {
           const { wavBuffer, duration } = await buildChunkAudio(allChunks[nextIndex]);
           await saveAudioBlob(`${live.episodeId}_${nextIndex}`, wavBuffer);
           chunkCache.current.set(`${live.episodeId}_${nextIndex}`, wavBuffer);
+          uploadEpisodeChunkToCloud(live.episodeId, nextIndex, wavBuffer);
           live.generatedDurations[nextIndex] = duration;
           live.generatedCount = nextIndex + 1;
 
@@ -1742,6 +1992,7 @@ const App: React.FC = () => {
         const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
+        uploadEpisodeChunkToCloud(id, index, wavBuffer);
         generatedDurations[index] = duration;
         setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
       }
@@ -1771,6 +2022,7 @@ const App: React.FC = () => {
         const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
+        uploadEpisodeChunkToCloud(id, index, wavBuffer);
         generatedDurations[index] = duration;
         patchEpisode(id, {
           readyChunkCount: index + 1,
@@ -1832,7 +2084,13 @@ const App: React.FC = () => {
     try {
       const buffers: ArrayBuffer[] = [];
       for (let i = 0; i < episode.chunkCount; i++) {
-        const b = await getAudioBlob(`${episode.audioBlobId}_${i}`);
+        let b = await getAudioBlob(`${episode.audioBlobId}_${i}`);
+        if (!b && authUser?.id) {
+          b = await downloadCloudEpisodeChunk(authUser.id, episode.audioBlobId, i);
+          if (b) {
+            await saveAudioBlob(`${episode.audioBlobId}_${i}`, b);
+          }
+        }
         if (b) buffers.push(b);
       }
       if (buffers.length === 0) throw new Error("Ingen audio hittades.");
@@ -1890,12 +2148,20 @@ const App: React.FC = () => {
         wavBuffer = await getAudioBlob(blobId) ?? undefined;
       }
 
+      if (!wavBuffer && authUser?.id) {
+        wavBuffer = await downloadCloudSummaryAudio(authUser.id, episode.audioBlobId) ?? undefined;
+        if (wavBuffer) {
+          await saveAudioBlob(blobId, wavBuffer);
+        }
+      }
+
       if (!wavBuffer) {
         const base64 = await generateTTS(summaryText, episode.voice as VoiceName, undefined, makeRetryOptions());
         setRetryNotice(null);
         const pcmBytes = decodeBase64ToUint8(base64);
         wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
         await saveAudioBlob(blobId, wavBuffer);
+        uploadSummaryToCloud(episode.audioBlobId, wavBuffer);
       }
 
       if (requestId !== summaryRequestRef.current) {
@@ -1921,16 +2187,9 @@ const App: React.FC = () => {
   };
 
   const waitForChunkData = async (episode: PodcastEpisode, index: number, requestId: number) => {
-    const cacheKey = `${episode.audioBlobId}_${index}`;
-
     while (requestId === playRequestRef.current) {
-      let data = chunkCache.current.get(cacheKey);
-      if (!data) {
-        data = await getAudioBlob(cacheKey);
-      }
-
+      const data = await loadChunkFromLocalOrCloud(episode, index);
       if (data) {
-        chunkCache.current.set(cacheKey, data);
         return data;
       }
 
@@ -1991,7 +2250,7 @@ const App: React.FC = () => {
       if (nextIndex < episode.chunkCount) {
         const nextKey = `${episode.audioBlobId}_${nextIndex}`;
         if (!chunkCache.current.has(nextKey)) {
-          void getAudioBlob(nextKey).then(nextData => {
+          void loadChunkFromLocalOrCloud(episode, nextIndex).then(nextData => {
             if (nextData) chunkCache.current.set(nextKey, nextData);
           });
         }
@@ -2154,7 +2413,14 @@ const App: React.FC = () => {
 
   const handleDeleteEpisode = async (episode: PodcastEpisode) => {
     try {
+      if (authUser?.id) {
+        markCloudSyncing();
+        await deleteCloudEpisode(authUser.id, episode);
+        markCloudReady();
+      }
+
       await deleteAudioBlobsByPrefix(`${episode.audioBlobId}_`);
+      await deleteAudioBlob(getSummaryAudioBlobId(episode));
 
       chunkCache.current.forEach((_, key) => {
         if (key.startsWith(`${episode.audioBlobId}_`)) {
@@ -2659,6 +2925,10 @@ const App: React.FC = () => {
   const libraryCategories = Array.from<string>(
     new Set(library.flatMap(episode => getEpisodeCategories(episode)))
   ).sort((a, b) => imageNameCollator.compare(a, b));
+  const totalLibraryRuntimeMinutes = Math.max(
+    0,
+    Math.round(library.reduce((total, episode) => total + getEpisodeDuration(episode), 0) / 60)
+  );
   const displayedLibrary = sortLibraryEpisodes(
     library.filter(episode =>
       activeCategoryFilter === 'all' || getEpisodeCategories(episode).includes(activeCategoryFilter)
@@ -2668,6 +2938,11 @@ const App: React.FC = () => {
   const categoryEditorEpisode = editingCategoryEpisodeId
     ? library.find(episode => episode.id === editingCategoryEpisodeId) ?? null
     : null;
+  const cloudFeedbackTone = cloudFeedback?.kind === 'error'
+    ? 'border-red-100 bg-red-50/90 text-red-600'
+    : cloudFeedback?.kind === 'success'
+      ? 'border-emerald-100 bg-emerald-50/90 text-emerald-700'
+      : 'border-indigo-100 bg-indigo-50/90 text-indigo-600';
 
   const openCategoryEditor = (episode: PodcastEpisode) => {
     setEditingCategoryEpisodeId(episode.id);
@@ -2689,32 +2964,76 @@ const App: React.FC = () => {
 
   return (
     <div
-      className="max-w-md w-full mx-auto h-[100dvh] flex flex-col overflow-y-auto bg-gray-50 font-sans text-gray-900 overflow-x-hidden"
+      className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900"
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
     >
-      <header className="p-6 bg-white border-b sticky top-0 z-30 flex justify-between items-center shadow-sm">
-        <div className="flex flex-col text-left">
-          <h1 className="text-xl font-black text-indigo-600 tracking-tighter">VoxPod AI</h1>
-          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{t('app_subtitle')}</span>
+      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/75 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+          <div className="flex flex-col text-left">
+            <h1 className="text-2xl font-black tracking-[-0.08em] text-indigo-600 sm:text-3xl">VoxPod AI</h1>
+            <span className="mt-1 text-[10px] font-black uppercase tracking-[0.32em] text-slate-400">{t('app_subtitle')}</span>
+          </div>
+
+          <div className="hidden flex-wrap items-center gap-2 lg:flex">
+            <span className="rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm">
+              {library.length} {t('library_title')}
+            </span>
+            <span className="rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm">
+              {totalLibraryRuntimeMinutes} MIN
+            </span>
+            <span className={`max-w-[340px] truncate rounded-full border px-4 py-2 text-[11px] font-black shadow-sm ${cloudFeedbackTone}`}>
+              {authUser ? authStatusEmail : t('cloud_status_signed_out')}
+            </span>
+          </div>
         </div>
       </header>
 
       <main
-        className="flex-1 p-5 space-y-6"
+        className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_380px] lg:px-8 xl:grid-cols-[minmax(0,1.16fr)_420px]"
         style={{
-          paddingBottom: `${contentBottomInset}px`,
-          scrollPaddingBottom: `${contentBottomInset}px`
+          paddingBottom: `${contentBottomInset + 32}px`,
+          scrollPaddingBottom: `${contentBottomInset + 32}px`
         }}
       >
         {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex justify-between items-center">
+          <div className="lg:col-span-2 bg-red-50/95 text-red-600 p-4 rounded-[1.75rem] text-xs font-bold border border-red-100 flex justify-between items-center shadow-sm">
             <span>{error}</span>
             <button onClick={() => setError(null)} className="text-xl px-2">×</button>
           </div>
         )}
 
+        <section className="relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-slate-950 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.32),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(99,102,241,0.4),_transparent_42%)]" />
+          <div className="relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8">
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-white/55">{t('hero_kicker')}</p>
+              <h2 className="mt-3 max-w-xl text-3xl font-black tracking-[-0.08em] text-white sm:text-4xl">
+                {t('hero_title')}
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72">
+                {t('hero_body')}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur">
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('library_title')}</p>
+                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{library.length}</p>
+              </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur">
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('categories_title')}</p>
+                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{libraryCategories.length}</p>
+              </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur sm:col-span-3 lg:col-span-2 xl:col-span-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('runtime_label')}</p>
+                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{totalLibraryRuntimeMinutes}<span className="ml-1 text-base text-white/60">min</span></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {isSupabaseConfigured && (
-          <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
+          <section className="lg:col-start-2 lg:row-start-2 bg-white/88 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
             <div className="flex items-start justify-between gap-4">
               <div className="text-left">
                 <h2 className="text-lg font-black text-gray-800">{t('auth_title')}</h2>
@@ -2733,6 +3052,12 @@ const App: React.FC = () => {
                 </button>
               )}
             </div>
+
+            {cloudFeedback && (
+              <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
+                {isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}
+              </div>
+            )}
 
             {authFeedback && (
               <div
@@ -2818,14 +3143,14 @@ const App: React.FC = () => {
           </section>
         )}
 
-        <div className="flex gap-2">
-          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+        <div className="grid gap-3 sm:grid-cols-3 lg:col-start-1 lg:row-start-2">
+          <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
             {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
           </button>
-          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+          <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
             {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
           </button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="flex-1 bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-95 transition-all disabled:bg-gray-100 disabled:text-gray-400">
+          <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="min-h-[72px] bg-white/88 p-4 rounded-[1.75rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur">
             {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
           </button>
           <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
@@ -2835,7 +3160,7 @@ const App: React.FC = () => {
           <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
           <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
         </div>
-        <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
+        <section className="lg:col-start-1 lg:row-start-3 bg-white/90 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
           <div className="relative">
             <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
             <textarea
@@ -2845,7 +3170,7 @@ const App: React.FC = () => {
               onChange={(e) => setInputText(e.target.value)}
               disabled={isInputLocked}
               placeholder={t('placeholder_text')}
-              className="w-full h-32 p-5 bg-gray-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100 disabled:text-gray-400"
+              className="w-full h-40 p-5 bg-slate-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100 disabled:text-gray-400 lg:h-64"
             />
             <label htmlFor="personal-notes" className="sr-only">{t('placeholder_notes')}</label>
             <textarea
@@ -2855,7 +3180,7 @@ const App: React.FC = () => {
               onChange={(e) => setInputNotes(e.target.value)}
               disabled={isInputLocked}
               placeholder={t('placeholder_notes')}
-              className="w-full h-20 p-5 bg-gray-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all disabled:text-gray-400"
+              className="w-full h-24 p-5 bg-slate-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all disabled:text-gray-400 lg:h-28"
             />
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button 
@@ -2943,9 +3268,9 @@ const App: React.FC = () => {
 
         </section>
 
-        <section className="space-y-4">
+        <section className="space-y-4 lg:col-start-2 lg:row-start-3 lg:self-start">
           <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
-          <div className="rounded-[2rem] border border-gray-100 bg-white p-4 shadow-sm space-y-3">
+          <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] space-y-3 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('sort_label')}</span>
               <select
@@ -2989,7 +3314,7 @@ const App: React.FC = () => {
           </div>
           <div className="grid gap-3 overflow-hidden">
             {displayedLibrary.map((ep) => (
-              <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`w-full min-w-0 p-4 rounded-[2rem] border transition-all flex items-center gap-3 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white border-gray-100 shadow-sm'}`}>
+              <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`w-full min-w-0 p-4 rounded-[2rem] border transition-all flex items-center gap-3 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white/92 border-white/80 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] backdrop-blur'}`}>
                 <div className={`w-10 h-10 shrink-0 rounded-2xl flex items-center justify-center font-bold ${player.activeEpisode?.id === ep.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
                   ✨
                 </div>
@@ -3070,8 +3395,8 @@ const App: React.FC = () => {
       </main>
 
       {player.activeEpisode && (
-        <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out">
-          <div className="max-w-md mx-auto w-full flex flex-col gap-4">
+        <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/92 backdrop-blur-2xl border-t border-white/70 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border">
+          <div className="max-w-5xl mx-auto w-full flex flex-col gap-4">
             <div className="flex justify-center">
               <button
                 onClick={() => setIsPlayerCollapsed(prev => !prev)}
@@ -3237,7 +3562,7 @@ const App: React.FC = () => {
 
       {showNotesModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-black text-gray-800">{t('notes_title')}</h3>
@@ -3301,7 +3626,7 @@ const App: React.FC = () => {
 
       {categoryEditorEpisode && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-5">
               <div className="flex justify-between items-center gap-4">
                 <div className="min-w-0">

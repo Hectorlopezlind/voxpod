@@ -35,6 +35,20 @@ Relevant files:
 - Local dev middleware: `vite.config.ts`
 - Pages routing control: `public/_routes.json`
 
+## Supabase Cloud Sync
+
+Supabase auth is wired into the frontend. For private per-user cloud sync across devices you must also:
+
+1. Keep the `Audio` bucket private
+2. Run `supabase/voxpod_cloud_sync.sql` in the Supabase SQL Editor
+3. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Cloudflare Pages
+
+What the SQL file sets up:
+
+- `public.podcast_episodes` for per-user episode metadata
+- Row Level Security so each authenticated user only sees their own rows
+- Storage policies so each user can only access objects inside `Audio/<their-user-id>/...`
+
 ## Secrets
 
 - `.env.local` is for local development only and must not be committed
