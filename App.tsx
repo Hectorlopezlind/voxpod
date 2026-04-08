@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import type { Session, User } from '@supabase/supabase-js';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
 import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
 import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
+import { isSupabaseConfigured, supabase } from './services/supabaseClient';
 import { 
   initAudioElement, 
   loadAudioFromBuffer, 
@@ -124,7 +126,23 @@ const EN_TRANSLATIONS = {
   sort_oldest: 'Oldest',
   sort_title: 'Title',
   uncategorized_label: 'Uncategorized',
-  empty_category_filter: 'No audio in this category yet.'
+  empty_category_filter: 'No audio in this category yet.',
+  auth_title: 'Account',
+  auth_subtitle_signed_out: 'Sign in to prepare cloud sync across devices.',
+  auth_subtitle_signed_in: 'You are signed in. Library sync can be connected next.',
+  auth_email_label: 'Email',
+  auth_password_label: 'Password',
+  auth_sign_in_tab: 'Sign in',
+  auth_sign_up_tab: 'Create account',
+  auth_sign_in_btn: 'Sign in',
+  auth_sign_up_btn: 'Create account',
+  auth_sign_out_btn: 'Sign out',
+  auth_signed_in_as: 'Signed in as',
+  auth_success_signed_in: 'Signed in.',
+  auth_success_signed_out: 'Signed out.',
+  auth_check_email: 'Account created. Check your email to verify it before signing in if verification is enabled.',
+  auth_email_confirmed: 'Account created and signed in.',
+  auth_loading: 'Connecting...'
 } as const;
 
 type SupportedLanguage = 'en' | 'sv';
@@ -193,7 +211,23 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     sort_oldest: 'Äldst',
     sort_title: 'Titel',
     uncategorized_label: 'Utan kategori',
-    empty_category_filter: 'Inga ljudfiler i den här kategorin än.'
+    empty_category_filter: 'Inga ljudfiler i den här kategorin än.',
+    auth_title: 'Konto',
+    auth_subtitle_signed_out: 'Logga in för att förbereda molnsynk mellan enheter.',
+    auth_subtitle_signed_in: 'Du är inloggad. Bibliotekssynk kan kopplas på härnäst.',
+    auth_email_label: 'E-post',
+    auth_password_label: 'Lösenord',
+    auth_sign_in_tab: 'Logga in',
+    auth_sign_up_tab: 'Skapa konto',
+    auth_sign_in_btn: 'Logga in',
+    auth_sign_up_btn: 'Skapa konto',
+    auth_sign_out_btn: 'Logga ut',
+    auth_signed_in_as: 'Inloggad som',
+    auth_success_signed_in: 'Inloggad.',
+    auth_success_signed_out: 'Utloggad.',
+    auth_check_email: 'Kontot skapades. Kontrollera din e-post om verifiering krävs innan du loggar in.',
+    auth_email_confirmed: 'Kontot skapades och du är nu inloggad.',
+    auth_loading: 'Ansluter...'
   }
 };
 
@@ -231,6 +265,12 @@ type ImportSessionState = {
 };
 
 type LibrarySortMode = 'newest' | 'oldest' | 'title';
+type AuthMode = 'signIn' | 'signUp';
+
+type AuthFeedback = {
+  kind: 'error' | 'success' | 'info';
+  message: string;
+};
 
 type LiveGenerationState = {
   sourceSessionId: string;
@@ -749,6 +789,36 @@ const sortLibraryEpisodes = (episodes: PodcastEpisode[], mode: LibrarySortMode) 
   }
 };
 
+const normalizeAuthErrorMessage = (message: string, userLang: SupportedLanguage) => {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('invalid login credentials')) {
+    return userLang === 'sv'
+      ? 'Fel e-post eller lösenord.'
+      : 'Incorrect email or password.';
+  }
+
+  if (normalized.includes('email not confirmed')) {
+    return userLang === 'sv'
+      ? 'Bekräfta din e-postadress innan du loggar in.'
+      : 'Confirm your email address before signing in.';
+  }
+
+  if (normalized.includes('user already registered')) {
+    return userLang === 'sv'
+      ? 'Det finns redan ett konto med den här e-postadressen.'
+      : 'An account with this email already exists.';
+  }
+
+  if (normalized.includes('password should be at least')) {
+    return userLang === 'sv'
+      ? 'Lösenordet måste vara minst 6 tecken.'
+      : 'Password must be at least 6 characters.';
+  }
+
+  return message;
+};
+
 const toSpeechSentence = (value: string) => {
   const normalized = normalizeInlineText(value);
   if (!normalized) return '';
@@ -829,6 +899,13 @@ const App: React.FC = () => {
   const [categoryDraft, setCategoryDraft] = useState('');
   const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>('newest');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
+  const [authMode, setAuthMode] = useState<AuthMode>('signIn');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authSession, setAuthSession] = useState<Session | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
@@ -914,6 +991,46 @@ const App: React.FC = () => {
       setShowSpeedControls(false);
     }
   }, [isPlayerCollapsed]);
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const bootstrapSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      if (error) {
+        console.error('Kunde inte läsa Supabase-sessionen', error);
+        setAuthFeedback({
+          kind: 'error',
+          message: normalizeAuthErrorMessage(error.message, userLang),
+        });
+        return;
+      }
+
+      setAuthSession(data.session);
+      setAuthUser(data.session?.user ?? null);
+    };
+
+    void bootstrapSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      setAuthSession(session);
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [userLang]);
 
   useEffect(() => {
     const summaryEl = new Audio();
@@ -2391,6 +2508,99 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSubmitAuth = async () => {
+    if (!supabase || !authEmail.trim() || !authPassword.trim()) {
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthFeedback(null);
+
+    try {
+      if (authMode === 'signIn') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        setAuthSession(data.session);
+        setAuthUser(data.user);
+        setAuthPassword('');
+        setAuthFeedback({
+          kind: 'success',
+          message: t('auth_success_signed_in'),
+        });
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email: authEmail.trim(),
+        password: authPassword,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAuthPassword('');
+      setAuthSession(data.session);
+      setAuthUser(data.user ?? null);
+      setAuthFeedback({
+        kind: 'success',
+        message: data.session ? t('auth_email_confirmed') : t('auth_check_email'),
+      });
+    } catch (error) {
+      console.error('Supabase auth misslyckades', error);
+      const message = error instanceof Error ? error.message : 'Auth failed.';
+      setAuthFeedback({
+        kind: 'error',
+        message: normalizeAuthErrorMessage(message, userLang),
+      });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (!supabase) {
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthFeedback(null);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+
+      setAuthSession(null);
+      setAuthUser(null);
+      setAuthPassword('');
+      setAuthFeedback({
+        kind: 'success',
+        message: t('auth_success_signed_out'),
+      });
+    } catch (error) {
+      console.error('Supabase signout misslyckades', error);
+      const message = error instanceof Error ? error.message : 'Sign out failed.';
+      setAuthFeedback({
+        kind: 'error',
+        message: normalizeAuthErrorMessage(message, userLang),
+      });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
   const activePrimaryButton = (() => {
     if (generationSession && (isGenerating || isGeneratingNotes)) {
       const progress = generationProgress.total > 0
@@ -2444,6 +2654,8 @@ const App: React.FC = () => {
   const isInputLocked = isBusy || isScanning;
   const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
   const notesLabels = getNotesLabels(userLang);
+  const authStatusEmail = authUser?.email || authSession?.user?.email || authEmail.trim();
+  const isAuthSubmitDisabled = isAuthLoading || !authEmail.trim() || !authPassword.trim();
   const libraryCategories = Array.from<string>(
     new Set(library.flatMap(episode => getEpisodeCategories(episode)))
   ).sort((a, b) => imageNameCollator.compare(a, b));
@@ -2499,6 +2711,111 @@ const App: React.FC = () => {
             <span>{error}</span>
             <button onClick={() => setError(null)} className="text-xl px-2">×</button>
           </div>
+        )}
+
+        {isSupabaseConfigured && (
+          <section className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="text-left">
+                <h2 className="text-lg font-black text-gray-800">{t('auth_title')}</h2>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  {authUser ? t('auth_subtitle_signed_in') : t('auth_subtitle_signed_out')}
+                </p>
+              </div>
+
+              {authUser && (
+                <button
+                  onClick={() => { void handleSignOut(); }}
+                  disabled={isAuthLoading}
+                  className="shrink-0 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-2 text-[11px] font-black text-indigo-600 disabled:text-gray-400"
+                >
+                  {t('auth_sign_out_btn')}
+                </button>
+              )}
+            </div>
+
+            {authFeedback && (
+              <div
+                className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
+                  authFeedback.kind === 'error'
+                    ? 'border-red-100 bg-red-50 text-red-600'
+                    : authFeedback.kind === 'success'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-indigo-100 bg-indigo-50 text-indigo-600'
+                }`}
+              >
+                {authFeedback.message}
+              </div>
+            )}
+
+            {authUser ? (
+              <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 text-left">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('auth_signed_in_as')}</p>
+                <p className="mt-2 break-all text-sm font-bold text-gray-800">{authStatusEmail}</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-50 p-1">
+                  <button
+                    onClick={() => setAuthMode('signIn')}
+                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                      authMode === 'signIn' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
+                    }`}
+                  >
+                    {t('auth_sign_in_tab')}
+                  </button>
+                  <button
+                    onClick={() => setAuthMode('signUp')}
+                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                      authMode === 'signUp' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
+                    }`}
+                  >
+                    {t('auth_sign_up_tab')}
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="space-y-1">
+                    <label htmlFor="auth-email" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('auth_email_label')}</label>
+                    <input
+                      id="auth-email"
+                      name="auth-email"
+                      type="email"
+                      autoComplete="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full rounded-2xl bg-gray-50 px-4 py-4 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="auth-password" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('auth_password_label')}</label>
+                    <input
+                      id="auth-password"
+                      name="auth-password"
+                      type="password"
+                      autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full rounded-2xl bg-gray-50 px-4 py-4 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => { void handleSubmitAuth(); }}
+                  disabled={isAuthSubmitDisabled}
+                  className="w-full min-h-[64px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 disabled:bg-gray-200 disabled:shadow-none active:scale-95 transition-all"
+                >
+                  {isAuthLoading
+                    ? t('auth_loading')
+                    : authMode === 'signIn'
+                      ? t('auth_sign_in_btn')
+                      : t('auth_sign_up_btn')}
+                </button>
+              </>
+            )}
+          </section>
         )}
 
         <div className="flex gap-2">
