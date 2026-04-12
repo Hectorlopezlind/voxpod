@@ -162,7 +162,13 @@ const EN_TRANSLATIONS = {
   hero_kicker: 'Private AI Audio Workspace',
   hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
   hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
-  runtime_label: 'Runtime'
+  runtime_label: 'Runtime',
+  layout_studio_title: 'Layout Studio',
+  layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
+  layout_studio_current: 'Current layout',
+  layout_studio_apply: 'Apply',
+  layout_studio_selected: 'Selected',
+  layout_dock_label: 'Layout'
 } as const;
 
 type SupportedLanguage = 'en' | 'sv';
@@ -256,7 +262,13 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
     hero_kicker: 'Privat AI-ljudstudio',
     hero_title: 'Gör dokument, bilder och anteckningar till ett bibliotek som följer dig mellan enheter.',
     hero_body: 'Skapa poddar från text, PDF, kamerabilder och bildserier. När du är inloggad kan biblioteket kopplas till ditt Supabase-konto i stället för bara den här webbläsaren.',
-    runtime_label: 'Speltid'
+    runtime_label: 'Speltid',
+    layout_studio_title: 'Layout Studio',
+    layout_studio_body: 'Jämför fyra presentationslägen. Den aktiva versionen sparas på den här enheten.',
+    layout_studio_current: 'Aktiv layout',
+    layout_studio_apply: 'Välj',
+    layout_studio_selected: 'Vald',
+    layout_dock_label: 'Layout'
   }
 };
 
@@ -301,6 +313,33 @@ type AuthFeedback = {
   message: string;
 };
 
+type LayoutVersion = 'A' | 'B' | 'C' | 'D';
+
+type LayoutPreset = {
+  label: LayoutVersion;
+  name: string;
+  description: string;
+  shellClassName: string;
+  headerClassName: string;
+  headerInnerClassName: string;
+  brandClassName: string;
+  subtitleClassName: string;
+  statChipClassName: string;
+  mainClassName: string;
+  heroClassName: string;
+  heroGlowClassName: string;
+  heroGridClassName: string;
+  heroMetricCardClassName: string;
+  panelClassName: string;
+  studioClassName: string;
+  studioCardClassName: string;
+  studioCardActiveClassName: string;
+  dockClassName: string;
+  dockButtonClassName: string;
+  dockButtonActiveClassName: string;
+  playerShellClassName: string;
+};
+
 type LiveGenerationState = {
   sourceSessionId: string;
   episodeId: string;
@@ -314,6 +353,12 @@ type LiveGenerationState = {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const classNames = (...values: Array<string | false | null | undefined>) =>
+  values.filter(Boolean).join(' ');
+
+const isLayoutVersion = (value: string | null): value is LayoutVersion =>
+  value !== null && value in LAYOUT_PRESET;
 
 const estimateImageScanSeconds = (fileCount: number) =>
   clamp(fileCount * 6, 8, 50);
@@ -354,11 +399,113 @@ const IMPORT_TEXT_CACHE_VERSION = 1;
 const LEGACY_LIBRARY_STORAGE_KEY = 'voxpod_library';
 const GUEST_LIBRARY_STORAGE_KEY = 'voxpod_library_guest';
 const USER_LIBRARY_STORAGE_KEY_PREFIX = 'voxpod_library_user:';
+const LAYOUT_VERSION_STORAGE_KEY = 'voxpod_layout_version';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
 const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
+
+const LAYOUT_PRESET: Record<LayoutVersion, LayoutPreset> = {
+  A: {
+    label: 'A',
+    name: 'Signal Split',
+    description: 'A balanced split layout with the original glass panels and wide hero banner.',
+    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900 antialiased',
+    headerClassName: 'sticky top-0 z-30 border-b border-white/70 bg-white/95',
+    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
+    brandClassName: 'text-indigo-600',
+    subtitleClassName: 'text-slate-400',
+    statChipClassName: 'rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm',
+    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_380px] lg:px-8 xl:grid-cols-[minmax(0,1.16fr)_420px]',
+    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-slate-950 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2',
+    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.32),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(99,102,241,0.4),_transparent_42%)]',
+    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8',
+    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur',
+    panelClassName: 'rounded-[2.5rem] border border-white/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] backdrop-blur-xl',
+    studioClassName: 'rounded-[2.5rem] border border-white/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(79,70,229,0.16)] backdrop-blur-xl',
+    studioCardClassName: 'border border-indigo-100/80 bg-indigo-50/50 text-indigo-950',
+    studioCardActiveClassName: 'ring-2 ring-indigo-500 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20',
+    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/80 bg-white/90 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(79,70,229,0.35)] backdrop-blur-2xl sm:right-6',
+    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-indigo-50',
+    dockButtonActiveClassName: 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-600',
+    playerShellClassName: 'fixed bottom-0 left-0 right-0 bg-white/92 backdrop-blur-2xl border-t border-white/70 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border',
+  },
+  B: {
+    label: 'B',
+    name: 'Coastal Console',
+    description: 'A cooler console layout with brighter chrome, tighter header spacing and a denser sidebar.',
+    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_34%),linear-gradient(180deg,#f0fdf4_0%,#eff6ff_44%,#f8fafc_100%)] font-sans text-slate-900 antialiased',
+    headerClassName: 'sticky top-0 z-30 border-b border-emerald-100/70 bg-white/88 backdrop-blur-xl',
+    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8',
+    brandClassName: 'text-sky-700',
+    subtitleClassName: 'text-emerald-500/80',
+    statChipClassName: 'rounded-full border border-emerald-100 bg-white/88 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(14,165,233,0.45)]',
+    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.04fr)_400px] lg:px-8 xl:grid-cols-[minmax(0,1.08fr)_440px]',
+    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-slate-950 via-sky-950 to-emerald-950 text-white shadow-[0_30px_90px_-50px_rgba(2,132,199,0.55)] lg:col-span-2',
+    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.28),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.36),_transparent_42%)]',
+    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.85fr)] lg:items-center lg:px-8',
+    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur-md',
+    panelClassName: 'rounded-[2.5rem] border border-emerald-100/70 bg-white/82 shadow-[0_30px_80px_-50px_rgba(14,165,233,0.3)] backdrop-blur-xl',
+    studioClassName: 'rounded-[2.5rem] border border-emerald-100/70 bg-white/82 shadow-[0_30px_80px_-50px_rgba(16,185,129,0.24)] backdrop-blur-xl',
+    studioCardClassName: 'border border-sky-200/70 bg-sky-950 text-white',
+    studioCardActiveClassName: 'ring-2 ring-sky-300 bg-gradient-to-br from-sky-600 to-emerald-500 text-white shadow-[0_24px_60px_-36px_rgba(14,165,233,0.55)]',
+    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/90 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(14,165,233,0.45)] backdrop-blur-2xl sm:right-6',
+    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-sky-50',
+    dockButtonActiveClassName: 'bg-sky-700 text-white shadow-lg shadow-sky-700/30 hover:bg-sky-700',
+    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/94 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(14,165,233,0.18)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-emerald-100',
+  },
+  C: {
+    label: 'C',
+    name: 'Editorial Glow',
+    description: 'A warmer editorial shell with softer cards, broader content space and rose-accented controls.',
+    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(244,63,94,0.12),_transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.16),_transparent_34%),linear-gradient(180deg,#fff7ed_0%,#fffaf5_36%,#fff1f2_100%)] font-sans text-slate-900 antialiased',
+    headerClassName: 'sticky top-0 z-30 border-b border-rose-100/70 bg-white/92 backdrop-blur-xl',
+    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
+    brandClassName: 'text-rose-600',
+    subtitleClassName: 'text-orange-400',
+    statChipClassName: 'rounded-full border border-rose-100 bg-white/86 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(244,63,94,0.35)]',
+    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.18fr)_360px] lg:px-8 xl:grid-cols-[minmax(0,1.22fr)_400px]',
+    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-rose-950 via-orange-950 to-amber-900 text-white shadow-[0_30px_90px_-50px_rgba(190,24,93,0.42)] lg:col-span-2',
+    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(251,113,133,0.24),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(251,146,60,0.38),_transparent_42%)]',
+    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.88fr)] lg:items-end lg:px-8',
+    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/12 bg-black/10 p-4 backdrop-blur',
+    panelClassName: 'rounded-[2.5rem] border border-rose-100/80 bg-white/86 shadow-[0_30px_80px_-50px_rgba(244,63,94,0.22)] backdrop-blur-xl',
+    studioClassName: 'rounded-[2.5rem] border border-rose-100/80 bg-white/86 shadow-[0_30px_80px_-50px_rgba(249,115,22,0.18)] backdrop-blur-xl',
+    studioCardClassName: 'border border-rose-200/80 bg-rose-50 text-rose-950',
+    studioCardActiveClassName: 'ring-2 ring-rose-400 bg-gradient-to-br from-rose-500 to-orange-400 text-white shadow-[0_24px_60px_-36px_rgba(244,63,94,0.45)]',
+    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/92 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(244,63,94,0.32)] backdrop-blur-2xl sm:right-6',
+    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-rose-50',
+    dockButtonActiveClassName: 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 hover:bg-rose-600',
+    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/94 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(244,63,94,0.16)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-rose-100',
+  },
+  D: {
+    label: 'D',
+    name: 'Slate Deck',
+    description: 'A cleaner deck with graphite highlights, stronger framing and the most pronounced desktop sidebar.',
+    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.1),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(245,158,11,0.12),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_42%,#fff7ed_100%)] font-sans text-slate-900 antialiased',
+    headerClassName: 'sticky top-0 z-30 border-b border-slate-200/70 bg-white/94 backdrop-blur-xl',
+    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
+    brandClassName: 'text-slate-900',
+    subtitleClassName: 'text-amber-500',
+    statChipClassName: 'rounded-full border border-slate-200 bg-white/88 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.25)]',
+    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8 xl:grid-cols-[minmax(0,1.05fr)_460px]',
+    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-slate-950 via-slate-900 to-stone-900 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2',
+    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(148,163,184,0.24),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(245,158,11,0.28),_transparent_42%)]',
+    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.02fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8',
+    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/8 p-4 backdrop-blur',
+    panelClassName: 'rounded-[2.5rem] border border-slate-200/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.22)] backdrop-blur-xl',
+    studioClassName: 'rounded-[2.5rem] border border-slate-200/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.18)] backdrop-blur-xl',
+    studioCardClassName: 'border border-slate-700 bg-slate-900 text-white',
+    studioCardActiveClassName: 'ring-2 ring-amber-300 bg-gradient-to-br from-slate-900 to-amber-700 text-white shadow-[0_24px_60px_-36px_rgba(15,23,42,0.58)]',
+    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/92 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(15,23,42,0.28)] backdrop-blur-2xl sm:right-6',
+    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-slate-100',
+    dockButtonActiveClassName: 'bg-slate-900 text-white shadow-lg shadow-slate-900/30 hover:bg-slate-900',
+    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/95 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(15,23,42,0.18)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-slate-200',
+  },
+};
+
+const LAYOUT_VERSIONS = Object.keys(LAYOUT_PRESET) as LayoutVersion[];
 
 const getScopedLibraryStorageKey = (userId?: string | null) =>
   userId ? `${USER_LIBRARY_STORAGE_KEY_PREFIX}${userId}` : GUEST_LIBRARY_STORAGE_KEY;
@@ -977,6 +1124,14 @@ const App: React.FC = () => {
   const [inputText, setInputText] = useState(() => localStorage.getItem(INPUT_TEXT_STORAGE_KEY) || '');
   const [inputNotes, setInputNotes] = useState(() => localStorage.getItem(INPUT_NOTES_STORAGE_KEY) || '');
   const [selectedVoice, setSelectedVoice] = useState<string>(PREMIUM_VOICES[0].name);
+  const [selectedLayoutVersion, setSelectedLayoutVersion] = useState<LayoutVersion>(() => {
+    if (typeof window === 'undefined') {
+      return 'A';
+    }
+
+    const storedLayoutVersion = window.localStorage.getItem(LAYOUT_VERSION_STORAGE_KEY);
+    return isLayoutVersion(storedLayoutVersion) ? storedLayoutVersion : 'A';
+  });
   const [playbackRate, setRate] = useState(1.0);
   
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1240,6 +1395,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(INPUT_NOTES_STORAGE_KEY, inputNotes);
   }, [inputNotes]);
+
+  useEffect(() => {
+    localStorage.setItem(LAYOUT_VERSION_STORAGE_KEY, selectedLayoutVersion);
+  }, [selectedLayoutVersion]);
 
   const isScanning = scanSource !== null;
   const isBusy = isGenerating || isGeneratingNotes || isTranslating;
@@ -2943,6 +3102,8 @@ const App: React.FC = () => {
     : cloudFeedback?.kind === 'success'
       ? 'border-emerald-100 bg-emerald-50/90 text-emerald-700'
       : 'border-indigo-100 bg-indigo-50/90 text-indigo-600';
+  const activeLayoutPreset = LAYOUT_PRESET[selectedLayoutVersion];
+  const layoutOptions = LAYOUT_VERSIONS.map((version) => LAYOUT_PRESET[version]);
 
   const openCategoryEditor = (episode: PodcastEpisode) => {
     setEditingCategoryEpisodeId(episode.id);
@@ -2964,24 +3125,24 @@ const App: React.FC = () => {
 
   return (
     <div
-      className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900 antialiased"
+      className={activeLayoutPreset.shellClassName}
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
     >
-      <header className="sticky top-0 z-30 border-b border-white/70 bg-white/95">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+      <header className={activeLayoutPreset.headerClassName}>
+        <div className={activeLayoutPreset.headerInnerClassName}>
           <div className="flex flex-col text-left">
-            <h1 className="text-[1.8rem] font-extrabold tracking-tight text-indigo-600 sm:text-[2.1rem]">VoxPod AI</h1>
-            <span className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.24em] text-slate-400">{t('app_subtitle')}</span>
+            <h1 className={classNames('text-[1.8rem] font-extrabold tracking-tight sm:text-[2.1rem]', activeLayoutPreset.brandClassName)}>VoxPod AI</h1>
+            <span className={classNames('mt-1 text-[10px] font-extrabold uppercase tracking-[0.24em]', activeLayoutPreset.subtitleClassName)}>{t('app_subtitle')}</span>
           </div>
 
           <div className="hidden flex-wrap items-center gap-2 lg:flex">
-            <span className="rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm">
+            <span className={activeLayoutPreset.statChipClassName}>
               {library.length} {t('library_title')}
             </span>
-            <span className="rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm">
+            <span className={activeLayoutPreset.statChipClassName}>
               {totalLibraryRuntimeMinutes} MIN
             </span>
-            <span className={`max-w-[340px] truncate rounded-full border px-4 py-2 text-[11px] font-black shadow-sm ${cloudFeedbackTone}`}>
+            <span className={classNames('max-w-[340px] truncate rounded-full border px-4 py-2 text-[11px] font-black shadow-sm', cloudFeedbackTone)}>
               {authUser ? authStatusEmail : t('cloud_status_signed_out')}
             </span>
           </div>
@@ -2989,7 +3150,7 @@ const App: React.FC = () => {
       </header>
 
       <main
-        className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_380px] lg:px-8 xl:grid-cols-[minmax(0,1.16fr)_420px]"
+        className={activeLayoutPreset.mainClassName}
         style={{
           paddingBottom: `${contentBottomInset + 32}px`,
           scrollPaddingBottom: `${contentBottomInset + 32}px`
@@ -3002,9 +3163,9 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <section className="relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-slate-950 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.32),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(99,102,241,0.4),_transparent_42%)]" />
-          <div className="relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8">
+        <section className={activeLayoutPreset.heroClassName}>
+          <div className={activeLayoutPreset.heroGlowClassName} />
+          <div className={activeLayoutPreset.heroGridClassName}>
             <div className="text-left">
               <p className="text-[10px] font-black uppercase tracking-[0.32em] text-white/55">{t('hero_kicker')}</p>
               <h2 className="mt-3 max-w-3xl text-3xl font-extrabold leading-[1.02] tracking-tight text-white sm:text-[2.75rem]">
@@ -3016,15 +3177,15 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur">
+              <div className={activeLayoutPreset.heroMetricCardClassName}>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('library_title')}</p>
                 <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{library.length}</p>
               </div>
-              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur">
+              <div className={activeLayoutPreset.heroMetricCardClassName}>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('categories_title')}</p>
                 <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{libraryCategories.length}</p>
               </div>
-              <div className="rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur sm:col-span-3 lg:col-span-2 xl:col-span-1">
+              <div className={classNames(activeLayoutPreset.heroMetricCardClassName, 'sm:col-span-3 lg:col-span-2 xl:col-span-1')}>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('runtime_label')}</p>
                 <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{totalLibraryRuntimeMinutes}<span className="ml-1 text-base text-white/60">min</span></p>
               </div>
@@ -3032,8 +3193,58 @@ const App: React.FC = () => {
           </div>
         </section>
 
+        <section className={classNames('lg:col-span-2 p-5 sm:p-6', activeLayoutPreset.studioClassName)}>
+          <div className="flex flex-col gap-4 text-left lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">{t('layout_studio_title')}</p>
+              <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
+                {activeLayoutPreset.label}. {activeLayoutPreset.name}
+              </h3>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                {t('layout_studio_body')}
+              </p>
+            </div>
+            <div className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500 shadow-sm">
+              {t('layout_studio_current')}: {selectedLayoutVersion}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {layoutOptions.map((preset) => {
+              const isSelected = preset.label === selectedLayoutVersion;
+
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setSelectedLayoutVersion(preset.label)}
+                  aria-pressed={isSelected}
+                  className={classNames(
+                    'rounded-[1.75rem] border p-4 text-left transition-all duration-200 hover:-translate-y-0.5',
+                    isSelected ? preset.studioCardActiveClassName : preset.studioCardClassName
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-black uppercase tracking-[0.28em]">{preset.label}</span>
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-75">
+                      {isSelected ? t('layout_studio_selected') : t('layout_studio_apply')}
+                    </span>
+                  </div>
+                  <h4 className="mt-4 text-lg font-black tracking-tight">{preset.name}</h4>
+                  <p className="mt-2 text-xs leading-6 opacity-85">{preset.description}</p>
+                  <div className="mt-4 flex items-center gap-2 opacity-65">
+                    <span className="h-2.5 w-2.5 rounded-full bg-current" />
+                    <span className="h-2 w-10 rounded-full bg-current" />
+                    <span className="h-2 w-16 rounded-full bg-current opacity-60" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         {isSupabaseConfigured && (
-          <section className="lg:col-start-2 lg:row-start-2 bg-white/88 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
+          <section className={classNames('lg:col-start-2 lg:row-start-2 space-y-4 p-5', activeLayoutPreset.panelClassName)}>
             <div className="flex items-start justify-between gap-4">
               <div className="text-left">
                 <h2 className="text-lg font-black text-gray-800">{t('auth_title')}</h2>
@@ -3161,7 +3372,7 @@ const App: React.FC = () => {
             <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
             <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
           </div>
-          <section className="bg-white/90 p-5 rounded-[2.5rem] shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] border border-white/80 space-y-4 backdrop-blur-xl">
+          <section className={classNames('space-y-4 p-5', activeLayoutPreset.panelClassName)}>
             <div className="relative">
             <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
             <textarea
@@ -3272,7 +3483,7 @@ const App: React.FC = () => {
 
         <section className="space-y-4 lg:col-start-2 lg:row-start-3 lg:self-start">
           <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
-          <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] space-y-3 backdrop-blur-xl">
+          <div className={classNames('space-y-3 p-4', activeLayoutPreset.panelClassName)}>
             <div className="flex items-center justify-between gap-3">
               <span className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('sort_label')}</span>
               <select
@@ -3396,8 +3607,31 @@ const App: React.FC = () => {
 
       </main>
 
+      <div
+        className={activeLayoutPreset.dockClassName}
+        style={{ bottom: `${contentBottomInset}px` }}
+      >
+        <span className="hidden pl-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 sm:block">
+          {t('layout_dock_label')}
+        </span>
+        {layoutOptions.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => setSelectedLayoutVersion(preset.label)}
+            aria-pressed={selectedLayoutVersion === preset.label}
+            className={classNames(
+              activeLayoutPreset.dockButtonClassName,
+              selectedLayoutVersion === preset.label && activeLayoutPreset.dockButtonActiveClassName
+            )}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
       {player.activeEpisode && (
-        <div ref={playerShellRef} className="fixed bottom-0 left-0 right-0 bg-white/92 backdrop-blur-2xl border-t border-white/70 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border">
+        <div ref={playerShellRef} className={activeLayoutPreset.playerShellClassName}>
           <div className="max-w-5xl mx-auto w-full flex flex-col gap-4">
             <div className="flex justify-center">
               <button
