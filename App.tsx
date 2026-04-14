@@ -31,6 +31,7 @@ import {
   setMediaSessionPlaybackState,
   unlockAudioPlayback
 } from './services/audioService';
+import heroPreviewImage from './supabase/images/kvinna.webp';
 
 const PREMIUM_VOICES = [
   { name: VoiceName.Kore, label: 'Klara' },
@@ -78,19 +79,19 @@ const LANGUAGES = [
 
 const EN_TRANSLATIONS = {
   app_subtitle: 'AI Podcast Streamer',
-  docs_btn: '📄 DOCS',
-  camera_btn: '📸 Camera',
-  images_btn: '📷 IMAGES',
+  docs_btn: 'Upload document',
+  camera_btn: 'Use camera',
+  images_btn: 'Upload images',
   scanning_pdf: 'Reading PDF...',
   scanning_images: 'Reading images...',
   translating: 'Translating...',
-  placeholder_text: 'Write something wonderful...',
-  placeholder_notes: 'Personal notes (optional)...',
-  clear_btn: '🗑️ Clear',
-  translate_btn: '🌐 Translate',
+  placeholder_text: 'Paste text, clean up an import, or write your own draft...',
+  placeholder_notes: '',
+  clear_btn: 'Clear',
+  translate_btn: 'Translate',
   voice_label: 'Voice',
   speed_label: 'Speed',
-  generate_btn: 'Start Podcast ✨',
+  generate_btn: 'Create podcast',
   creating_podcast: 'Creating podcast',
   loading_text: 'Loading text',
   translating_short: 'Translating',
@@ -101,11 +102,12 @@ const EN_TRANSLATIONS = {
   ai_voice_mode: 'AI VOICE MODE',
   part_label: 'PART',
   of_label: 'OF',
-  notes_title: 'Notes',
-  no_notes: 'No notes available yet.',
+  notes_title: 'Summary',
+  no_notes: 'No summary available yet.',
   close_btn: 'Close',
+  cancel_btn: 'Cancel',
   sec_left: 'sec left',
-  scanning_progress: 'Scanning...',
+  scanning_progress: 'Importing text',
   est_time: 'est.',
   countdown_label: 'COUNTDOWN',
   almost_done: 'Almost done',
@@ -119,7 +121,7 @@ const EN_TRANSLATIONS = {
   listen_summary_btn: 'Listen to summary',
   pause_summary_btn: 'Pause summary',
   summary_audio_error: 'Could not play the summary.',
-  summary_button_title: 'Summary audio',
+  summary_button_title: 'Play summary',
   add_bookmark_btn: 'Add bookmark',
   bookmarks_title: 'Bookmarks',
   speed_toggle_show: 'Show speed',
@@ -132,15 +134,17 @@ const EN_TRANSLATIONS = {
   save_categories_btn: 'Save categories',
   edit_categories_btn: 'Categories',
   all_categories: 'All',
-  sort_label: 'Sort',
+  sort_label: 'Sort by',
   sort_newest: 'Newest',
   sort_oldest: 'Oldest',
   sort_title: 'Title',
   uncategorized_label: 'Uncategorized',
   empty_category_filter: 'No audio in this category yet.',
   auth_title: 'Account',
-  auth_subtitle_signed_out: 'Sign in to keep your audio private and available across devices.',
-  auth_subtitle_signed_in: 'You are signed in. New audio can sync privately to your account.',
+  auth_subtitle_signed_out: 'Unlock private sync and keep your library with you across signed-in devices.',
+  auth_subtitle_signed_in: 'Your premium tools and private sync are active on this account.',
+  auth_open_btn: 'Open account',
+  auth_status_signed_in_short: 'Signed in',
   auth_email_label: 'Email',
   auth_password_label: 'Password',
   auth_sign_in_tab: 'Sign in',
@@ -162,6 +166,19 @@ const EN_TRANSLATIONS = {
   hero_kicker: 'Private AI Audio Workspace',
   hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
   hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
+  hero_feature_kicker: 'VOXPOD PREMIUM',
+  hero_feature_title: 'Sign in for premium features.',
+  hero_preview_label: 'Featured',
+  hero_preview_title: 'Turn captured text into a polished listening session.',
+  hero_preview_body: 'Import a document, a photo or a full image set, then shape the result before you press play.',
+  hero_action_hint: '',
+  imported_text_label: 'Text editor',
+  import_status_ready: 'Ready to edit',
+  edit_summary_btn: 'Edit summary',
+  save_summary_btn: 'Save summary',
+  summary_title_label: 'Summary title',
+  summary_body_label: 'Summary text',
+  now_playing_label: 'Now playing',
   runtime_label: 'Runtime',
   layout_studio_title: 'Layout Studio',
   layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
@@ -178,96 +195,112 @@ const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = 
   en: EN_TRANSLATIONS,
   sv: {
     app_subtitle: 'AI Podcast Streamer',
-    docs_btn: '📄 DOK',
-    camera_btn: '📸 Kamera',
-    images_btn: '📷 BILDER',
-    scanning_pdf: 'Läser PDF...',
-    scanning_images: 'Läser bilder...',
-    translating: 'Översätter...',
-    placeholder_text: 'Skriv något härligt...',
-    placeholder_notes: 'Egna anteckningar (valfritt)...',
-    clear_btn: '🗑️ Rensa',
-    translate_btn: '🌐 Översätt',
-    voice_label: 'Röst',
-    speed_label: 'Hastighet',
-    generate_btn: 'Starta podd ✨',
-    creating_podcast: 'Skapar podd',
-    loading_text: 'Laddar text',
-    translating_short: 'Översätter',
-    progress_label: 'Framsteg',
-    time_left: 'kvar',
-    library_title: 'Bibliotek',
-    empty_library: 'Tomt bibliotek',
+    docs_btn: 'Upload document',
+    camera_btn: 'Use camera',
+    images_btn: 'Upload images',
+    scanning_pdf: 'Reading PDF...',
+    scanning_images: 'Reading images...',
+    translating: 'Translating...',
+    placeholder_text: 'Paste text, clean up an import, or write your own draft...',
+    placeholder_notes: '',
+    clear_btn: 'Clear',
+    translate_btn: 'Translate',
+    voice_label: 'Voice',
+    speed_label: 'Speed',
+    generate_btn: 'Create podcast',
+    creating_podcast: 'Creating podcast',
+    loading_text: 'Loading text',
+    translating_short: 'Translating',
+    progress_label: 'Progress',
+    time_left: 'left',
+    library_title: 'Library',
+    empty_library: 'Empty Library',
     ai_voice_mode: 'AI VOICE MODE',
-    part_label: 'DEL',
-    of_label: 'AV',
-    notes_title: 'Anteckningar',
-    no_notes: 'Inga anteckningar än.',
-    close_btn: 'Stäng',
-    sec_left: 'sek kvar',
-    scanning_progress: 'Läser...',
-    est_time: 'ca',
+    part_label: 'PART',
+    of_label: 'OF',
+    notes_title: 'Summary',
+    no_notes: 'No summary available yet.',
+    close_btn: 'Close',
+    cancel_btn: 'Cancel',
+    sec_left: 'sec left',
+    scanning_progress: 'Importing text',
+    est_time: 'est.',
     countdown_label: 'NEDRÄKNING',
-    almost_done: 'Snart klar',
-    target_label: 'Målspråk',
-    files_label: 'filer',
-    step_label: 'Steg',
-    image_order_title: 'Bildordning',
-    image_order_hint: 'Appen läser bilderna i den här ordningen.',
-    retrying: 'Försöker igen automatiskt',
-    waiting_for_network: 'Väntar på nätverk',
-    listen_summary_btn: 'Lyssna på sammanfattning',
-    pause_summary_btn: 'Pausa sammanfattning',
-    summary_audio_error: 'Kunde inte spela upp sammanfattningen.',
-    summary_button_title: 'Lyssna på sammanfattning',
-    add_bookmark_btn: 'Lägg bokmärke',
-    bookmarks_title: 'Bokmärken',
-    speed_toggle_show: 'Visa hastighet',
-    speed_toggle_hide: 'Göm hastighet',
-    player_hide: 'Göm spelare',
-    player_show: 'Visa spelare',
-    categories_title: 'Kategorier',
-    category_placeholder: 'politik, romaner, historia',
-    category_hint: 'Separera kategorier med kommatecken.',
-    save_categories_btn: 'Spara kategorier',
-    edit_categories_btn: 'Kategorier',
-    all_categories: 'Alla',
-    sort_label: 'Sortera',
-    sort_newest: 'Nyast',
-    sort_oldest: 'Äldst',
-    sort_title: 'Titel',
-    uncategorized_label: 'Utan kategori',
-    empty_category_filter: 'Inga ljudfiler i den här kategorin än.',
-    auth_title: 'Konto',
-    auth_subtitle_signed_out: 'Logga in för att hålla ditt ljud privat och tillgängligt mellan enheter.',
-    auth_subtitle_signed_in: 'Du är inloggad. Nya ljudfiler kan nu synkas privat till ditt konto.',
-    auth_email_label: 'E-post',
-    auth_password_label: 'Lösenord',
-    auth_sign_in_tab: 'Logga in',
-    auth_sign_up_tab: 'Skapa konto',
-    auth_sign_in_btn: 'Logga in',
-    auth_sign_up_btn: 'Skapa konto',
-    auth_sign_out_btn: 'Logga ut',
-    auth_signed_in_as: 'Inloggad som',
-    auth_success_signed_in: 'Inloggad.',
-    auth_success_signed_out: 'Utloggad.',
-    auth_check_email: 'Kontot skapades. Kontrollera din e-post om verifiering krävs innan du loggar in.',
-    auth_email_confirmed: 'Kontot skapades och du är nu inloggad.',
-    auth_loading: 'Ansluter...',
-    cloud_status_ready: 'Privat molnsynk är aktiv för det här kontot.',
-    cloud_status_syncing: 'Synkar ditt privata ljudbibliotek...',
-    cloud_status_signed_out: 'Logga in för att spara ljud privat och öppna det på alla enheter där du är inloggad.',
-    cloud_status_setup_needed: 'Kör SQL-filen för Supabase innan molnsynken kan skydda dina filer.',
-    cloud_status_permission_error: 'Molnsynken blockeras av saknade Supabase-rättigheter eller bucket-regler.',
-    hero_kicker: 'Privat AI-ljudstudio',
-    hero_title: 'Gör dokument, bilder och anteckningar till ett bibliotek som följer dig mellan enheter.',
-    hero_body: 'Skapa poddar från text, PDF, kamerabilder och bildserier. När du är inloggad kan biblioteket kopplas till ditt Supabase-konto i stället för bara den här webbläsaren.',
-    runtime_label: 'Speltid',
+    almost_done: 'Almost done',
+    target_label: 'Target',
+    files_label: 'files',
+    step_label: 'Step',
+    image_order_title: 'Image order',
+    image_order_hint: 'The app reads images in this order.',
+    retrying: 'Retrying automatically',
+    waiting_for_network: 'Waiting for network',
+    listen_summary_btn: 'Listen to summary',
+    pause_summary_btn: 'Pause summary',
+    summary_audio_error: 'Could not play the summary.',
+    summary_button_title: 'Play summary',
+    add_bookmark_btn: 'Add bookmark',
+    bookmarks_title: 'Bookmarks',
+    speed_toggle_show: 'Show speed',
+    speed_toggle_hide: 'Hide speed',
+    player_hide: 'Hide player',
+    player_show: 'Show player',
+    categories_title: 'Categories',
+    category_placeholder: 'politics, novels, history',
+    category_hint: 'Separate categories with commas.',
+    save_categories_btn: 'Save categories',
+    edit_categories_btn: 'Categories',
+    all_categories: 'All',
+    sort_label: 'Sort by',
+    sort_newest: 'Newest',
+    sort_oldest: 'Oldest',
+    sort_title: 'Title',
+    uncategorized_label: 'Uncategorized',
+    empty_category_filter: 'No audio in this category yet.',
+    auth_title: 'Account',
+    auth_subtitle_signed_out: 'Unlock private sync and keep your library with you across signed-in devices.',
+    auth_subtitle_signed_in: 'Your premium tools and private sync are active on this account.',
+    auth_open_btn: 'Open account',
+    auth_status_signed_in_short: 'Signed in',
+    auth_email_label: 'Email',
+    auth_password_label: 'Password',
+    auth_sign_in_tab: 'Sign in',
+    auth_sign_up_tab: 'Create account',
+    auth_sign_in_btn: 'Sign in',
+    auth_sign_up_btn: 'Create account',
+    auth_sign_out_btn: 'Sign out',
+    auth_signed_in_as: 'Signed in as',
+    auth_success_signed_in: 'Signed in.',
+    auth_success_signed_out: 'Signed out.',
+    auth_check_email: 'Account created. Check your email to verify it before signing in if verification is enabled.',
+    auth_email_confirmed: 'Account created and signed in.',
+    auth_loading: 'Connecting...',
+    cloud_status_ready: 'Private cloud sync is active for this account.',
+    cloud_status_syncing: 'Syncing your private audio library...',
+    cloud_status_signed_out: 'Sign in to save audio privately and open it on any signed-in device.',
+    cloud_status_setup_needed: 'Run the Supabase SQL setup before cloud sync can protect your files.',
+    cloud_status_permission_error: 'Cloud sync is blocked by missing Supabase permissions or bucket rules.',
+    hero_kicker: 'Private AI Audio Workspace',
+    hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
+    hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
+    hero_feature_kicker: 'VOXPOD PREMIUM',
+    hero_feature_title: 'Sign in for premium features.',
+    hero_preview_label: 'Featured',
+    hero_preview_title: 'Turn captured text into a polished listening session.',
+    hero_preview_body: 'Import a document, a photo or a full image set, then shape the result before you press play.',
+    hero_action_hint: '',
+    imported_text_label: 'Text editor',
+    import_status_ready: 'Ready to edit',
+    edit_summary_btn: 'Edit summary',
+    save_summary_btn: 'Save summary',
+    summary_title_label: 'Summary title',
+    summary_body_label: 'Summary text',
+    now_playing_label: 'Now playing',
+    runtime_label: 'Runtime',
     layout_studio_title: 'Layout Studio',
-    layout_studio_body: 'Jämför fyra presentationslägen. Den aktiva versionen sparas på den här enheten.',
-    layout_studio_current: 'Aktiv layout',
-    layout_studio_apply: 'Välj',
-    layout_studio_selected: 'Vald',
+    layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
+    layout_studio_current: 'Current layout',
+    layout_studio_apply: 'Apply',
+    layout_studio_selected: 'Selected',
     layout_dock_label: 'Layout'
   }
 };
@@ -313,12 +346,7 @@ type AuthFeedback = {
   message: string;
 };
 
-type LayoutVersion = 'A' | 'B' | 'C' | 'D';
-
 type LayoutPreset = {
-  label: LayoutVersion;
-  name: string;
-  description: string;
   shellClassName: string;
   headerClassName: string;
   headerInnerClassName: string;
@@ -331,12 +359,6 @@ type LayoutPreset = {
   heroGridClassName: string;
   heroMetricCardClassName: string;
   panelClassName: string;
-  studioClassName: string;
-  studioCardClassName: string;
-  studioCardActiveClassName: string;
-  dockClassName: string;
-  dockButtonClassName: string;
-  dockButtonActiveClassName: string;
   playerShellClassName: string;
 };
 
@@ -356,9 +378,6 @@ const clamp = (value: number, min: number, max: number) =>
 
 const classNames = (...values: Array<string | false | null | undefined>) =>
   values.filter(Boolean).join(' ');
-
-const isLayoutVersion = (value: string | null): value is LayoutVersion =>
-  value !== null && value in LAYOUT_PRESET;
 
 const estimateImageScanSeconds = (fileCount: number) =>
   clamp(fileCount * 6, 8, 50);
@@ -399,113 +418,26 @@ const IMPORT_TEXT_CACHE_VERSION = 1;
 const LEGACY_LIBRARY_STORAGE_KEY = 'voxpod_library';
 const GUEST_LIBRARY_STORAGE_KEY = 'voxpod_library_guest';
 const USER_LIBRARY_STORAGE_KEY_PREFIX = 'voxpod_library_user:';
-const LAYOUT_VERSION_STORAGE_KEY = 'voxpod_layout_version';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
-const INPUT_NOTES_STORAGE_KEY = 'voxpod_input_notes';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 
-const LAYOUT_PRESET: Record<LayoutVersion, LayoutPreset> = {
-  A: {
-    label: 'A',
-    name: 'Signal Split',
-    description: 'A balanced split layout with the original glass panels and wide hero banner.',
-    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.16),_transparent_28%),linear-gradient(180deg,#eef2ff_0%,#f8fafc_38%,#f8fafc_100%)] font-sans text-slate-900 antialiased',
-    headerClassName: 'sticky top-0 z-30 border-b border-white/70 bg-white/95',
-    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
-    brandClassName: 'text-indigo-600',
-    subtitleClassName: 'text-slate-400',
-    statChipClassName: 'rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm',
-    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.1fr)_380px] lg:px-8 xl:grid-cols-[minmax(0,1.16fr)_420px]',
-    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-slate-950 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2',
-    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.32),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(99,102,241,0.4),_transparent_42%)]',
-    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8',
-    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur',
-    panelClassName: 'rounded-[2.5rem] border border-white/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.35)] backdrop-blur-xl',
-    studioClassName: 'rounded-[2.5rem] border border-white/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(79,70,229,0.16)] backdrop-blur-xl',
-    studioCardClassName: 'border border-indigo-100/80 bg-indigo-50/50 text-indigo-950',
-    studioCardActiveClassName: 'ring-2 ring-indigo-500 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20',
-    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/80 bg-white/90 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(79,70,229,0.35)] backdrop-blur-2xl sm:right-6',
-    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-indigo-50',
-    dockButtonActiveClassName: 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-600',
-    playerShellClassName: 'fixed bottom-0 left-0 right-0 bg-white/92 backdrop-blur-2xl border-t border-white/70 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border',
-  },
-  B: {
-    label: 'B',
-    name: 'Coastal Console',
-    description: 'A cooler console layout with brighter chrome, tighter header spacing and a denser sidebar.',
-    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_34%),linear-gradient(180deg,#f0fdf4_0%,#eff6ff_44%,#f8fafc_100%)] font-sans text-slate-900 antialiased',
-    headerClassName: 'sticky top-0 z-30 border-b border-emerald-100/70 bg-white/88 backdrop-blur-xl',
-    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8',
-    brandClassName: 'text-sky-700',
-    subtitleClassName: 'text-emerald-500/80',
-    statChipClassName: 'rounded-full border border-emerald-100 bg-white/88 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(14,165,233,0.45)]',
-    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.04fr)_400px] lg:px-8 xl:grid-cols-[minmax(0,1.08fr)_440px]',
-    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-slate-950 via-sky-950 to-emerald-950 text-white shadow-[0_30px_90px_-50px_rgba(2,132,199,0.55)] lg:col-span-2',
-    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.28),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.36),_transparent_42%)]',
-    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.85fr)] lg:items-center lg:px-8',
-    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/10 p-4 backdrop-blur-md',
-    panelClassName: 'rounded-[2.5rem] border border-emerald-100/70 bg-white/82 shadow-[0_30px_80px_-50px_rgba(14,165,233,0.3)] backdrop-blur-xl',
-    studioClassName: 'rounded-[2.5rem] border border-emerald-100/70 bg-white/82 shadow-[0_30px_80px_-50px_rgba(16,185,129,0.24)] backdrop-blur-xl',
-    studioCardClassName: 'border border-sky-200/70 bg-sky-950 text-white',
-    studioCardActiveClassName: 'ring-2 ring-sky-300 bg-gradient-to-br from-sky-600 to-emerald-500 text-white shadow-[0_24px_60px_-36px_rgba(14,165,233,0.55)]',
-    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/90 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(14,165,233,0.45)] backdrop-blur-2xl sm:right-6',
-    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-sky-50',
-    dockButtonActiveClassName: 'bg-sky-700 text-white shadow-lg shadow-sky-700/30 hover:bg-sky-700',
-    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/94 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(14,165,233,0.18)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-emerald-100',
-  },
-  C: {
-    label: 'C',
-    name: 'Editorial Glow',
-    description: 'A warmer editorial shell with softer cards, broader content space and rose-accented controls.',
-    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(244,63,94,0.12),_transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.16),_transparent_34%),linear-gradient(180deg,#fff7ed_0%,#fffaf5_36%,#fff1f2_100%)] font-sans text-slate-900 antialiased',
-    headerClassName: 'sticky top-0 z-30 border-b border-rose-100/70 bg-white/92 backdrop-blur-xl',
-    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
-    brandClassName: 'text-rose-600',
-    subtitleClassName: 'text-orange-400',
-    statChipClassName: 'rounded-full border border-rose-100 bg-white/86 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(244,63,94,0.35)]',
-    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.18fr)_360px] lg:px-8 xl:grid-cols-[minmax(0,1.22fr)_400px]',
-    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-rose-950 via-orange-950 to-amber-900 text-white shadow-[0_30px_90px_-50px_rgba(190,24,93,0.42)] lg:col-span-2',
-    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(251,113,133,0.24),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(251,146,60,0.38),_transparent_42%)]',
-    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.88fr)] lg:items-end lg:px-8',
-    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/12 bg-black/10 p-4 backdrop-blur',
-    panelClassName: 'rounded-[2.5rem] border border-rose-100/80 bg-white/86 shadow-[0_30px_80px_-50px_rgba(244,63,94,0.22)] backdrop-blur-xl',
-    studioClassName: 'rounded-[2.5rem] border border-rose-100/80 bg-white/86 shadow-[0_30px_80px_-50px_rgba(249,115,22,0.18)] backdrop-blur-xl',
-    studioCardClassName: 'border border-rose-200/80 bg-rose-50 text-rose-950',
-    studioCardActiveClassName: 'ring-2 ring-rose-400 bg-gradient-to-br from-rose-500 to-orange-400 text-white shadow-[0_24px_60px_-36px_rgba(244,63,94,0.45)]',
-    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/92 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(244,63,94,0.32)] backdrop-blur-2xl sm:right-6',
-    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-rose-50',
-    dockButtonActiveClassName: 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 hover:bg-rose-600',
-    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/94 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(244,63,94,0.16)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-rose-100',
-  },
-  D: {
-    label: 'D',
-    name: 'Slate Deck',
-    description: 'A cleaner deck with graphite highlights, stronger framing and the most pronounced desktop sidebar.',
-    shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.1),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(245,158,11,0.12),_transparent_34%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_42%,#fff7ed_100%)] font-sans text-slate-900 antialiased',
-    headerClassName: 'sticky top-0 z-30 border-b border-slate-200/70 bg-white/94 backdrop-blur-xl',
-    headerInnerClassName: 'mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8',
-    brandClassName: 'text-slate-900',
-    subtitleClassName: 'text-amber-500',
-    statChipClassName: 'rounded-full border border-slate-200 bg-white/88 px-4 py-2 text-[11px] font-black text-slate-600 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.25)]',
-    mainClassName: 'mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8 xl:grid-cols-[minmax(0,1.05fr)_460px]',
-    heroClassName: 'relative overflow-hidden rounded-[2.75rem] border border-slate-900/5 bg-gradient-to-br from-slate-950 via-slate-900 to-stone-900 text-white shadow-[0_30px_90px_-50px_rgba(15,23,42,0.6)] lg:col-span-2',
-    heroGlowClassName: 'absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(148,163,184,0.24),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(245,158,11,0.28),_transparent_42%)]',
-    heroGridClassName: 'relative grid gap-5 px-6 py-6 sm:px-7 lg:grid-cols-[minmax(0,1.02fr)_minmax(300px,0.9fr)] lg:items-end lg:px-8',
-    heroMetricCardClassName: 'rounded-[1.75rem] border border-white/10 bg-white/8 p-4 backdrop-blur',
-    panelClassName: 'rounded-[2.5rem] border border-slate-200/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.22)] backdrop-blur-xl',
-    studioClassName: 'rounded-[2.5rem] border border-slate-200/80 bg-white/88 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.18)] backdrop-blur-xl',
-    studioCardClassName: 'border border-slate-700 bg-slate-900 text-white',
-    studioCardActiveClassName: 'ring-2 ring-amber-300 bg-gradient-to-br from-slate-900 to-amber-700 text-white shadow-[0_24px_60px_-36px_rgba(15,23,42,0.58)]',
-    dockClassName: 'fixed right-4 z-40 flex items-center gap-2 rounded-full border border-white/90 bg-white/92 px-3 py-3 shadow-[0_18px_45px_-20px_rgba(15,23,42,0.28)] backdrop-blur-2xl sm:right-6',
-    dockButtonClassName: 'flex h-10 w-10 items-center justify-center rounded-full text-xs font-black text-slate-500 transition-all hover:bg-slate-100',
-    dockButtonActiveClassName: 'bg-slate-900 text-white shadow-lg shadow-slate-900/30 hover:bg-slate-900',
-    playerShellClassName: 'fixed bottom-0 left-0 right-0 border-t border-white/80 bg-white/95 p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] z-40 rounded-t-[3.5rem] shadow-[0_-20px_50px_-12px_rgba(15,23,42,0.18)] backdrop-blur-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-full duration-700 ease-out lg:bottom-5 lg:left-1/2 lg:w-[min(1180px,calc(100vw-2rem))] lg:-translate-x-1/2 lg:rounded-[2.75rem] lg:border lg:border-slate-200',
-  },
+const LAYOUT_PRESET: LayoutPreset = {
+  shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.2),_transparent_30%),radial-gradient(circle_at_bottom,_rgba(34,211,238,0.13),_transparent_36%),linear-gradient(180deg,#071423_0%,#0f223d_48%,#173458_100%)] font-sans text-slate-50 antialiased',
+  headerClassName: 'sticky top-0 z-30 bg-[linear-gradient(180deg,rgba(7,20,35,0.84),rgba(7,20,35,0.52)_62%,transparent)] backdrop-blur-sm',
+  headerInnerClassName: 'mx-auto flex w-full max-w-[430px] items-center gap-4 px-4 py-2 md:max-w-[860px] md:px-5 md:py-2.5 lg:max-w-6xl lg:px-6',
+  brandClassName: 'text-slate-50',
+  subtitleClassName: 'text-slate-300',
+  statChipClassName: 'rounded-full border border-[#d7e7fb]/85 bg-[#f4faff]/92 px-4 py-2 text-[11px] font-black text-slate-700 shadow-[0_18px_45px_-30px_rgba(2,6,23,0.3)] backdrop-blur',
+  mainClassName: 'mx-auto grid w-full max-w-[430px] gap-3 px-4 pb-6 md:max-w-[860px] md:grid-cols-[minmax(0,1fr)_280px] md:gap-4 md:px-5 lg:max-w-6xl lg:grid-cols-[minmax(0,1.12fr)_380px] lg:gap-5 lg:px-6 xl:grid-cols-[minmax(0,1.16fr)_420px]',
+  heroClassName: 'relative overflow-hidden rounded-[2.2rem] bg-transparent text-zinc-950 md:col-span-2',
+  heroGlowClassName: 'absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_42%)]',
+  heroGridClassName: 'relative flex min-h-[230px] items-end p-4 sm:min-h-[270px] sm:p-5 md:min-h-[310px] md:p-6 lg:min-h-[340px]',
+  heroMetricCardClassName: 'rounded-[1.65rem] border border-[#d7e7fb]/85 bg-[#eef7ff]/90 p-4 backdrop-blur',
+  panelClassName: 'rounded-[2rem] border border-[#d4e3f7]/90 bg-[linear-gradient(180deg,rgba(248,252,255,0.98),rgba(231,241,252,0.95))] shadow-[0_24px_64px_-42px_rgba(2,6,23,0.42)] backdrop-blur-xl',
+  playerShellClassName: 'fixed bottom-0 left-0 right-0 z-40 flex flex-col gap-4 rounded-t-[3.2rem] border-t border-[#d4e3f7]/90 bg-[linear-gradient(180deg,rgba(246,251,255,0.98),rgba(231,241,252,0.97))] p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-[0_-22px_54px_-22px_rgba(2,6,23,0.42)] backdrop-blur-2xl animate-in slide-in-from-bottom-full duration-700 ease-out md:bottom-4 md:left-1/2 md:right-auto md:w-[min(860px,calc(100vw-1.5rem))] md:-translate-x-1/2 md:rounded-[2.4rem] md:border lg:bottom-5 lg:w-[min(1180px,calc(100vw-2rem))] lg:rounded-[2.6rem]',
 };
-
-const LAYOUT_VERSIONS = Object.keys(LAYOUT_PRESET) as LayoutVersion[];
 
 const getScopedLibraryStorageKey = (userId?: string | null) =>
   userId ? `${USER_LIBRARY_STORAGE_KEY_PREFIX}${userId}` : GUEST_LIBRARY_STORAGE_KEY;
@@ -659,7 +591,7 @@ const readFileAsBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = () => reject(reader.error ?? new Error('Kunde inte läsa filen.'));
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the file.'));
     reader.readAsDataURL(file);
   });
 
@@ -701,7 +633,7 @@ const splitParagraphIntoSentences = (paragraph: string) =>
 
 const NOTES_UI_LABELS = {
   en: {
-    title: 'Notes',
+    title: 'Summary',
     summary: 'Summary',
     personal: 'Your notes',
     highlights: 'Highlights',
@@ -1114,24 +1046,13 @@ const getRequiredLiveReadyChunks = (
 };
 
 const App: React.FC = () => {
-  const [userLang] = useState<SupportedLanguage>(() => {
-    const navLang = navigator.language.split('-')[0];
-    return navLang in TRANSLATIONS ? navLang as SupportedLanguage : 'en';
-  });
+  const userLang: SupportedLanguage = 'en';
 
   const t = (key: TranslationKey) => TRANSLATIONS[userLang][key];
   const [library, setLibrary] = useState<PodcastEpisode[]>([]);
   const [inputText, setInputText] = useState(() => localStorage.getItem(INPUT_TEXT_STORAGE_KEY) || '');
-  const [inputNotes, setInputNotes] = useState(() => localStorage.getItem(INPUT_NOTES_STORAGE_KEY) || '');
+  const inputNotes = '';
   const [selectedVoice, setSelectedVoice] = useState<string>(PREMIUM_VOICES[0].name);
-  const [selectedLayoutVersion, setSelectedLayoutVersion] = useState<LayoutVersion>(() => {
-    if (typeof window === 'undefined') {
-      return 'A';
-    }
-
-    const storedLayoutVersion = window.localStorage.getItem(LAYOUT_VERSION_STORAGE_KEY);
-    return isLayoutVersion(storedLayoutVersion) ? storedLayoutVersion : 'A';
-  });
   const [playbackRate, setRate] = useState(1.0);
   
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1142,12 +1063,18 @@ const App: React.FC = () => {
   const [scanSource, setScanSource] = useState<'document' | 'camera' | 'images' | null>(null);
   const [isLoadingChunk, setIsLoadingChunk] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showVoiceMenu, setShowVoiceMenu] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
+  const [isEditingSummary, setIsEditingSummary] = useState(false);
+  const [summaryTitleDraft, setSummaryTitleDraft] = useState('');
+  const [summaryBodyDraft, setSummaryBodyDraft] = useState('');
   const [showSpeedControls, setShowSpeedControls] = useState(false);
   const [editingCategoryEpisodeId, setEditingCategoryEpisodeId] = useState<string | null>(null);
   const [categoryDraft, setCategoryDraft] = useState('');
   const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>('newest');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
+  const [showAuthPanel, setShowAuthPanel] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>('signIn');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -1174,6 +1101,8 @@ const App: React.FC = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const langMenuRef = useRef<HTMLDivElement>(null);
+  const voiceMenuRef = useRef<HTMLDivElement>(null);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
   const playRequestRef = useRef(0);
   const [searchBuffer, setSearchBuffer] = useState('');
@@ -1339,12 +1268,20 @@ const App: React.FC = () => {
       if (langMenuRef.current && !langMenuRef.current.contains(event.target as Node)) {
         setShowLangMenu(false);
       }
+
+      if (voiceMenuRef.current && !voiceMenuRef.current.contains(event.target as Node)) {
+        setShowVoiceMenu(false);
+      }
+
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setShowSortMenu(false);
+      }
     };
-    if (showLangMenu) {
+    if (showLangMenu || showVoiceMenu || showSortMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showLangMenu]);
+  }, [showLangMenu, showVoiceMenu, showSortMenu]);
 
   // Focus the menu when it opens to enable keyboard shortcuts
   useEffect(() => {
@@ -1355,6 +1292,20 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [showLangMenu]);
+
+  useEffect(() => {
+    const notes = normalizeEpisodeNotes(showNotesModal?.notes, userLang);
+    if (!showNotesModal || !notes) {
+      setIsEditingSummary(false);
+      setSummaryTitleDraft('');
+      setSummaryBodyDraft('');
+      return;
+    }
+
+    setIsEditingSummary(false);
+    setSummaryTitleDraft(notes.title);
+    setSummaryBodyDraft(notes.summary);
+  }, [showNotesModal?.id, showNotesModal?.notes, userLang]);
 
   // Keyboard jumping logic
   const handleLangKeyDown = (e: React.KeyboardEvent) => {
@@ -1391,14 +1342,6 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(INPUT_TEXT_STORAGE_KEY, inputText);
   }, [inputText]);
-
-  useEffect(() => {
-    localStorage.setItem(INPUT_NOTES_STORAGE_KEY, inputNotes);
-  }, [inputNotes]);
-
-  useEffect(() => {
-    localStorage.setItem(LAYOUT_VERSION_STORAGE_KEY, selectedLayoutVersion);
-  }, [selectedLayoutVersion]);
 
   const isScanning = scanSource !== null;
   const isBusy = isGenerating || isGeneratingNotes || isTranslating;
@@ -1953,7 +1896,7 @@ const App: React.FC = () => {
               liveGenerationRef.current = null;
               setIsGenerating(false);
               setGenerationSession(null);
-              setError('Det fanns inte tillräckligt med tolkad text för att starta podden.');
+              setError('There was not enough imported text to start the podcast.');
             }
             break;
           }
@@ -1994,7 +1937,7 @@ const App: React.FC = () => {
             await handlePlayEpisode(newEpisode, 0);
             live.startedPlayback = true;
           } catch (error) {
-            console.error('Kunde inte starta uppspelningen direkt för live-generering', error);
+            console.error('Could not start playback immediately for live generation', error);
           }
 
           continue;
@@ -2055,7 +1998,7 @@ const App: React.FC = () => {
               duration: sumDurations(live.generatedDurations),
             });
           } catch (error) {
-            console.error('Kunde inte generera anteckningar för live-import', error);
+            console.error('Could not generate notes for the live import', error);
             patchEpisode(live.episodeId, {
               notes: buildFallbackEpisodeNotes(trimmedText, inputNotes, userLang),
               generationStatus: 'ready',
@@ -2074,8 +2017,8 @@ const App: React.FC = () => {
         break;
       }
     } catch (error) {
-      console.error('Live-generering misslyckades', error);
-      setError(error instanceof Error && error.message ? error.message : 'Kunde inte skapa podden från filströmmen.');
+      console.error('Live generation failed', error);
+      setError(error instanceof Error && error.message ? error.message : 'Could not create the podcast from the imported stream.');
       liveGenerationRef.current = null;
       setIsGenerating(false);
       setIsGeneratingNotes(false);
@@ -2118,7 +2061,7 @@ const App: React.FC = () => {
           generatedDurations: [],
           startedPlayback: false,
           voice: selectedVoice as VoiceName,
-          title: sourceText.split('\n')[0].substring(0, 40) || 'Ny Produktion',
+          title: sourceText.split('\n')[0].substring(0, 40) || 'New episode',
         };
 
         void pumpLiveGeneration();
@@ -2129,7 +2072,7 @@ const App: React.FC = () => {
       const chunks = chunkText(inputText);
       if (chunks.length === 0) return;
 
-      const title = inputText.trim().split('\n')[0].substring(0, 40) || 'Ny Produktion';
+      const title = inputText.trim().split('\n')[0].substring(0, 40) || 'New episode';
       const shouldGenerateNotes = inputText.trim().length > 0;
       const notesSourceText = buildNotesSourceText(inputText);
       const fallbackNotes = buildFallbackEpisodeNotes(inputText, inputNotes, userLang);
@@ -2209,13 +2152,13 @@ const App: React.FC = () => {
           });
           setGenerationProgress({ current: totalSteps, total: totalSteps });
         } catch (e) {
-          console.error("Kunde inte generera anteckningar", e);
+          console.error('Could not generate notes', e);
           patchEpisode(id, {
             notes: fallbackNotes,
             generationStatus: 'ready',
             duration: sumDurations(generatedDurations)
           });
-          setError("AI-anteckningarna kunde inte genereras, så snygga anteckningar skapades lokalt i stället.");
+          setError('AI notes could not be generated, so a local summary was created instead.');
         } finally {
           setIsGeneratingNotes(false);
           setGenerationSession(prev => prev ? { ...prev, notesCompleted: true } : prev);
@@ -2225,7 +2168,7 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error && err.message ? err.message : "Kunde inte starta podden.");
+      setError(err instanceof Error && err.message ? err.message : 'Could not start the podcast.');
     }
     finally {
       if (!liveGenerationRef.current) {
@@ -2261,7 +2204,7 @@ const App: React.FC = () => {
       a.download = `${episode.title.replace(/\s+/g, '_')}.mp3`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { setError("MP3-nedladdning misslyckades."); }
+    } catch (err) { setError('MP3 download failed.'); }
     finally { setIsDownloading(null); }
   };
 
@@ -2419,8 +2362,8 @@ const App: React.FC = () => {
         chunkCache.current.delete(`${episode.audioBlobId}_${index - 2}`);
       }
     } catch (e) { 
-      console.error("Fel vid uppspelning av chunk", e);
-      setError("Fel vid uppspelning."); 
+      console.error('Chunk playback failed', e);
+      setError('Playback failed.'); 
     } finally {
       if (requestId === playRequestRef.current) {
         setIsLoadingChunk(false);
@@ -2497,7 +2440,7 @@ const App: React.FC = () => {
 
         await playAudio();
       } catch (err) {
-        console.error("Kunde inte återuppta uppspelningen", err);
+      console.error('Could not resume playback', err);
         await playChunk(currentEpisode, player.currentChunkIndex, { autoplay: true, startTime: chunkTime });
         return;
       }
@@ -2622,7 +2565,7 @@ const App: React.FC = () => {
 
       updateLibrary(prev => prev.filter(x => x.id !== episode.id));
     } catch (err) {
-      setError("Kunde inte radera avsnittet.");
+      setError('Could not delete the episode.');
     }
   };
 
@@ -2799,12 +2742,12 @@ const App: React.FC = () => {
           }
           setRetryNotice(null);
         } catch (err) {
-          throw new Error(`Bild ${i + 1} misslyckades.`);
+          throw new Error(`Image ${i + 1} failed.`);
         }
         setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
       }
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "Bildläsning misslyckades.");
+      setError(err instanceof Error && err.message ? err.message : 'Image import failed.');
     } finally {
       completeImportSession(importSession.id);
       setScanSource(null);
@@ -2869,13 +2812,13 @@ const App: React.FC = () => {
           }
           setRetryNotice(null);
         } catch (err) {
-          throw new Error(`Dokument ${i + 1} misslyckades.`);
+          throw new Error(`Document ${i + 1} failed.`);
         }
 
         setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
       }
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : 'Dokumentläsning misslyckades.');
+      setError(err instanceof Error && err.message ? err.message : 'Document import failed.');
     } finally {
       completeImportSession(importSession.id);
       setScanSource(null);
@@ -2924,7 +2867,7 @@ const App: React.FC = () => {
       setRetryNotice(null);
       setInputText(translated);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "Översättning misslyckades.");
+      setError(err instanceof Error && err.message ? err.message : 'Translation failed.');
     }
     finally {
       setIsTranslating(false);
@@ -2959,6 +2902,7 @@ const App: React.FC = () => {
           kind: 'success',
           message: t('auth_success_signed_in'),
         });
+        setShowAuthPanel(false);
         return;
       }
 
@@ -2981,6 +2925,9 @@ const App: React.FC = () => {
         kind: 'success',
         message: data.session ? t('auth_email_confirmed') : t('auth_check_email'),
       });
+      if (data.session) {
+        setShowAuthPanel(false);
+      }
     } catch (error) {
       console.error('Supabase auth misslyckades', error);
       const message = error instanceof Error ? error.message : 'Auth failed.';
@@ -3068,6 +3015,12 @@ const App: React.FC = () => {
     ? summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isPlaying
     : false;
   const activeEpisodeBookmarks = player.activeEpisode?.bookmarks ?? [];
+  const activeEpisodeRuntime = player.activeEpisode
+    ? formatTime(getEpisodeDuration(player.activeEpisode))
+    : formatTime(player.duration);
+  const activeEpisodeVoiceLabel = player.activeEpisode
+    ? PREMIUM_VOICES.find((voice) => voice.name === player.activeEpisode.voice)?.label ?? player.activeEpisode.voice
+    : '';
   const activeImportSession = importSessionRef.current;
   const canGenerateFromImportSession = (() => {
     if (!isScanning || !activeImportSession) return false;
@@ -3084,10 +3037,6 @@ const App: React.FC = () => {
   const libraryCategories = Array.from<string>(
     new Set(library.flatMap(episode => getEpisodeCategories(episode)))
   ).sort((a, b) => imageNameCollator.compare(a, b));
-  const totalLibraryRuntimeMinutes = Math.max(
-    0,
-    Math.round(library.reduce((total, episode) => total + getEpisodeDuration(episode), 0) / 60)
-  );
   const displayedLibrary = sortLibraryEpisodes(
     library.filter(episode =>
       activeCategoryFilter === 'all' || getEpisodeCategories(episode).includes(activeCategoryFilter)
@@ -3098,12 +3047,31 @@ const App: React.FC = () => {
     ? library.find(episode => episode.id === editingCategoryEpisodeId) ?? null
     : null;
   const cloudFeedbackTone = cloudFeedback?.kind === 'error'
-    ? 'border-red-100 bg-red-50/90 text-red-600'
+    ? 'border-red-200 bg-red-50 text-red-700'
     : cloudFeedback?.kind === 'success'
-      ? 'border-emerald-100 bg-emerald-50/90 text-emerald-700'
-      : 'border-indigo-100 bg-indigo-50/90 text-indigo-600';
-  const activeLayoutPreset = LAYOUT_PRESET[selectedLayoutVersion];
-  const layoutOptions = LAYOUT_VERSIONS.map((version) => LAYOUT_PRESET[version]);
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : 'border-[#d7e7fb] bg-[#eef7ff] text-slate-700';
+  const importStatusLabel = scanSource
+    ? t('scanning_progress')
+    : inputText.trim()
+      ? t('import_status_ready')
+      : null;
+  const selectedVoiceLabel = PREMIUM_VOICES.find((voice) => voice.name === selectedVoice)?.label ?? selectedVoice;
+  const librarySortLabel = librarySortMode === 'oldest'
+    ? t('sort_oldest')
+    : librarySortMode === 'title'
+      ? t('sort_title')
+      : t('sort_newest');
+  const isSummaryDirty = resolvedModalNotes
+    ? summaryTitleDraft.trim() !== resolvedModalNotes.title || summaryBodyDraft.trim() !== resolvedModalNotes.summary
+    : false;
+  const activeLayoutPreset = LAYOUT_PRESET;
+  const subtleLabelClass = 'text-[10px] font-black uppercase tracking-[0.22em] text-slate-600';
+  const darkFieldClass = 'w-full rounded-2xl border border-[#d4e3f7] bg-white px-4 py-4 text-sm font-semibold text-zinc-900 outline-none shadow-[0_12px_28px_-22px_rgba(15,23,42,0.24)] focus:ring-2 focus:ring-blue-500/18';
+  const darkButtonClass = 'rounded-2xl border border-[#c8daf2] bg-white text-zinc-900 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.2)] transition-colors hover:bg-[#f8fbff]';
+  const accentButtonClass = 'bg-gradient-to-r from-[#1d4ed8] via-[#0284c7] to-[#06b6d4] text-white shadow-[0_20px_38px_-20px_rgba(37,99,235,0.38)]';
+  const libraryItemIdleClass = 'bg-[linear-gradient(180deg,rgba(248,252,255,0.98),rgba(231,241,252,0.96))] border-[#c8daf2] text-zinc-900 shadow-[0_26px_64px_-46px_rgba(2,6,23,0.3)] backdrop-blur';
+  const libraryItemActiveClass = 'bg-gradient-to-br from-blue-600 to-cyan-500 text-white border-transparent shadow-[0_24px_60px_-36px_rgba(59,130,246,0.24)]';
 
   const openCategoryEditor = (episode: PodcastEpisode) => {
     setEditingCategoryEpisodeId(episode.id);
@@ -3123,29 +3091,55 @@ const App: React.FC = () => {
     closeCategoryEditor();
   };
 
+  const saveSummaryEdits = () => {
+    if (!showNotesModal || !resolvedModalNotes) return;
+
+    const updatedNotes: EpisodeNotes = {
+      ...resolvedModalNotes,
+      title: truncateText(summaryTitleDraft, 70) || resolvedModalNotes.title,
+      summary: truncateText(summaryBodyDraft, 280) || resolvedModalNotes.summary,
+    };
+
+    patchEpisode(showNotesModal.id, { notes: updatedNotes });
+    setShowNotesModal((current) => current ? { ...current, notes: updatedNotes } : current);
+    setIsEditingSummary(false);
+  };
+
   return (
     <div
       className={activeLayoutPreset.shellClassName}
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
     >
       <header className={activeLayoutPreset.headerClassName}>
-        <div className={activeLayoutPreset.headerInnerClassName}>
-          <div className="flex flex-col text-left">
-            <h1 className={classNames('text-[1.8rem] font-extrabold tracking-tight sm:text-[2.1rem]', activeLayoutPreset.brandClassName)}>VoxPod AI</h1>
-            <span className={classNames('mt-1 text-[10px] font-extrabold uppercase tracking-[0.24em]', activeLayoutPreset.subtitleClassName)}>{t('app_subtitle')}</span>
+        <div className={classNames(activeLayoutPreset.headerInnerClassName, 'justify-between')}>
+          <div className="flex items-center gap-2 text-left">
+            <h1 className={classNames('text-[0.88rem] font-black tracking-[0.01em] text-slate-100/88 md:text-[0.92rem]', activeLayoutPreset.brandClassName)}>VoxPod</h1>
           </div>
 
-          <div className="hidden flex-wrap items-center gap-2 lg:flex">
-            <span className={activeLayoutPreset.statChipClassName}>
-              {library.length} {t('library_title')}
-            </span>
-            <span className={activeLayoutPreset.statChipClassName}>
-              {totalLibraryRuntimeMinutes} MIN
-            </span>
-            <span className={classNames('max-w-[340px] truncate rounded-full border px-4 py-2 text-[11px] font-black shadow-sm', cloudFeedbackTone)}>
-              {authUser ? authStatusEmail : t('cloud_status_signed_out')}
-            </span>
-          </div>
+          {isSupabaseConfigured && (
+            <button
+              onClick={() => setShowAuthPanel((current) => !current)}
+              className={classNames(
+                'inline-flex items-center gap-2 rounded-full px-1.5 py-1 text-[10px] font-black transition-colors',
+                authUser
+                  ? 'text-emerald-200/95 hover:bg-white/10 hover:text-emerald-100'
+                  : 'text-slate-200 hover:bg-white/10 hover:text-white'
+              )}
+              aria-label={t('auth_open_btn')}
+            >
+              {authUser ? (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                  <span className="hidden sm:inline">{t('auth_status_signed_in_short')}</span>
+                </>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                  <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+                  <path d="M4 20a8 8 0 0 1 16 0" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
       </header>
 
@@ -3157,279 +3151,180 @@ const App: React.FC = () => {
         }}
       >
         {error && (
-          <div className="lg:col-span-2 bg-red-50/95 text-red-600 p-4 rounded-[1.75rem] text-xs font-bold border border-red-100 flex justify-between items-center shadow-sm">
+          <div className="md:col-span-2 flex items-center justify-between rounded-[1.75rem] border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 shadow-[0_18px_45px_-32px_rgba(239,68,68,0.18)]">
             <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-xl px-2">×</button>
+            <button onClick={() => setError(null)} className="px-2 text-xl text-red-500">×</button>
           </div>
         )}
 
         <section className={activeLayoutPreset.heroClassName}>
+          <img
+            src={heroPreviewImage}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover object-[center_24%]"
+          />
           <div className={activeLayoutPreset.heroGlowClassName} />
           <div className={activeLayoutPreset.heroGridClassName}>
-            <div className="text-left">
-              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-white/55">{t('hero_kicker')}</p>
-              <h2 className="mt-3 max-w-3xl text-3xl font-extrabold leading-[1.02] tracking-tight text-white sm:text-[2.75rem]">
-                {t('hero_title')}
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72">
-                {t('hero_body')}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
-              <div className={activeLayoutPreset.heroMetricCardClassName}>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('library_title')}</p>
-                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{library.length}</p>
-              </div>
-              <div className={activeLayoutPreset.heroMetricCardClassName}>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('categories_title')}</p>
-                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{libraryCategories.length}</p>
-              </div>
-              <div className={classNames(activeLayoutPreset.heroMetricCardClassName, 'sm:col-span-3 lg:col-span-2 xl:col-span-1')}>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/55">{t('runtime_label')}</p>
-                <p className="mt-3 text-3xl font-black tracking-[-0.08em] text-white">{totalLibraryRuntimeMinutes}<span className="ml-1 text-base text-white/60">min</span></p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className={classNames('lg:col-span-2 p-5 sm:p-6', activeLayoutPreset.studioClassName)}>
-          <div className="flex flex-col gap-4 text-left lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">{t('layout_studio_title')}</p>
-              <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-                {activeLayoutPreset.label}. {activeLayoutPreset.name}
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(16,12,28,0.08)_26%,rgba(20,14,34,0.82)_100%)]" />
+            <div className="relative z-[2] text-left">
+              <h3 className="max-w-[17ch] text-[1.45rem] font-black leading-[1.02] tracking-tight text-white sm:text-[1.6rem] md:text-[1.78rem]">
+                {t('hero_preview_title')}
               </h3>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                {t('layout_studio_body')}
-              </p>
             </div>
-            <div className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500 shadow-sm">
-              {t('layout_studio_current')}: {selectedLayoutVersion}
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {layoutOptions.map((preset) => {
-              const isSelected = preset.label === selectedLayoutVersion;
-
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => setSelectedLayoutVersion(preset.label)}
-                  aria-pressed={isSelected}
-                  className={classNames(
-                    'rounded-[1.75rem] border p-4 text-left transition-all duration-200 hover:-translate-y-0.5',
-                    isSelected ? preset.studioCardActiveClassName : preset.studioCardClassName
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[10px] font-black uppercase tracking-[0.28em]">{preset.label}</span>
-                    <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-75">
-                      {isSelected ? t('layout_studio_selected') : t('layout_studio_apply')}
-                    </span>
-                  </div>
-                  <h4 className="mt-4 text-lg font-black tracking-tight">{preset.name}</h4>
-                  <p className="mt-2 text-xs leading-6 opacity-85">{preset.description}</p>
-                  <div className="mt-4 flex items-center gap-2 opacity-65">
-                    <span className="h-2.5 w-2.5 rounded-full bg-current" />
-                    <span className="h-2 w-10 rounded-full bg-current" />
-                    <span className="h-2 w-16 rounded-full bg-current opacity-60" />
-                  </div>
-                </button>
-              );
-            })}
           </div>
         </section>
 
-        {isSupabaseConfigured && (
-          <section className={classNames('lg:col-start-2 lg:row-start-2 space-y-4 p-5', activeLayoutPreset.panelClassName)}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="text-left">
-                <h2 className="text-lg font-black text-gray-800">{t('auth_title')}</h2>
-                <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                  {authUser ? t('auth_subtitle_signed_in') : t('auth_subtitle_signed_out')}
-                </p>
-              </div>
+        <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
+        <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
+        <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
+        <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
+        <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
+        <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
 
-              {authUser && (
+        <div className="order-2 space-y-3 md:col-start-1 md:row-start-2 md:order-none">
+          <section className={classNames('space-y-4 p-4 sm:p-5', activeLayoutPreset.panelClassName)}>
+            <div className="flex items-center justify-between gap-3">
+              <span className={subtleLabelClass}>{t('imported_text_label')}</span>
+              <div className="flex items-center gap-2">
+                {importStatusLabel && (
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                    {importStatusLabel}
+                  </span>
+                )}
                 <button
-                  onClick={() => { void handleSignOut(); }}
-                  disabled={isAuthLoading}
-                  className="shrink-0 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-2 text-[11px] font-black text-indigo-600 disabled:text-gray-400"
+                  onClick={() => {
+                    setInputText('');
+                  }}
+                  disabled={!inputText || isInputLocked}
+                  className="rounded-full border border-[#c8daf2] bg-white px-3.5 py-1.5 text-[10px] font-black text-zinc-800 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.2)] transition-colors hover:bg-[#f8fbff] disabled:bg-zinc-100 disabled:text-zinc-400"
                 >
-                  {t('auth_sign_out_btn')}
+                  {t('clear_btn')}
                 </button>
-              )}
+              </div>
             </div>
 
-            {cloudFeedback && (
-              <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
-                {isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}
-              </div>
-            )}
-
-            {authFeedback && (
-              <div
-                className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
-                  authFeedback.kind === 'error'
-                    ? 'border-red-100 bg-red-50 text-red-600'
-                    : authFeedback.kind === 'success'
-                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                      : 'border-indigo-100 bg-indigo-50 text-indigo-600'
-                }`}
+            <div className="rounded-3xl border border-[#d4e3f7] bg-[#eef7ff]/84 p-2.5 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.24)] backdrop-blur">
+              <div className="grid grid-cols-3 gap-2.5">
+              <button
+                onClick={() => documentInputRef.current?.click()}
+                disabled={isInputLocked}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {authFeedback.message}
-              </div>
-            )}
-
-            {authUser ? (
-              <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 text-left">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('auth_signed_in_as')}</p>
-                <p className="mt-2 break-all text-sm font-bold text-gray-800">{authStatusEmail}</p>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-50 p-1">
-                  <button
-                    onClick={() => setAuthMode('signIn')}
-                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
-                      authMode === 'signIn' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
-                    }`}
-                  >
-                    {t('auth_sign_in_tab')}
-                  </button>
-                  <button
-                    onClick={() => setAuthMode('signUp')}
-                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
-                      authMode === 'signUp' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
-                    }`}
-                  >
-                    {t('auth_sign_up_tab')}
-                  </button>
-                </div>
-
-                <div className="grid gap-3">
-                  <div className="space-y-1">
-                    <label htmlFor="auth-email" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('auth_email_label')}</label>
-                    <input
-                      id="auth-email"
-                      name="auth-email"
-                      type="email"
-                      autoComplete="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full rounded-2xl bg-gray-50 px-4 py-4 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label htmlFor="auth-password" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('auth_password_label')}</label>
-                    <input
-                      id="auth-password"
-                      name="auth-password"
-                      type="password"
-                      autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full rounded-2xl bg-gray-50 px-4 py-4 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => { void handleSubmitAuth(); }}
-                  disabled={isAuthSubmitDisabled}
-                  className="w-full min-h-[64px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 disabled:bg-gray-200 disabled:shadow-none active:scale-95 transition-all"
-                >
-                  {isAuthLoading
-                    ? t('auth_loading')
-                    : authMode === 'signIn'
-                      ? t('auth_sign_in_btn')
-                      : t('auth_sign_up_btn')}
-                </button>
-              </>
-            )}
-          </section>
-        )}
-
-        <div className="space-y-4 lg:col-start-1 lg:row-start-2">
-          <div className="grid auto-rows-min gap-3 sm:grid-cols-3">
-            <button onClick={() => documentInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-              {scanSource === 'document' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('docs_btn')}
-            </button>
-            <button onClick={() => cameraInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-              {scanSource === 'camera' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('camera_btn')}
-            </button>
-            <button onClick={() => fileInputRef.current?.click()} disabled={isInputLocked} className="h-14 bg-white/88 px-4 rounded-[1.2rem] shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] border border-white/80 flex items-center justify-center gap-2 text-[11px] font-black text-indigo-600 active:scale-[0.98] transition-all disabled:bg-gray-100 disabled:text-gray-400 backdrop-blur sm:h-16 lg:h-14">
-              {scanSource === 'images' ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div> : t('images_btn')}
-            </button>
-            <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
-            <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
-            <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
-            <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
-            <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
-            <input id="document-upload" name="document-upload" type="file" ref={documentInputRef} onChange={handleDocumentUpload} accept={DOCUMENT_UPLOAD_ACCEPT} multiple className="hidden" aria-label={t('docs_btn')} />
-          </div>
-          <section className={classNames('space-y-4 p-5', activeLayoutPreset.panelClassName)}>
-            <div className="relative">
-            <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
-            <textarea
-              id="podcast-text"
-              name="podcast-text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              disabled={isInputLocked}
-              placeholder={t('placeholder_text')}
-              className="w-full h-40 p-5 bg-slate-50 rounded-t-3xl resize-none outline-none text-sm leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all border-b border-gray-100 disabled:text-gray-400 lg:h-64"
-            />
-            <label htmlFor="personal-notes" className="sr-only">{t('placeholder_notes')}</label>
-            <textarea
-              id="personal-notes"
-              name="personal-notes"
-              value={inputNotes}
-              onChange={(e) => setInputNotes(e.target.value)}
-              disabled={isInputLocked}
-              placeholder={t('placeholder_notes')}
-              className="w-full h-24 p-5 bg-slate-50 rounded-b-3xl resize-none outline-none text-xs leading-relaxed focus:ring-2 focus:ring-indigo-100 transition-all disabled:text-gray-400 lg:h-28"
-            />
-            <div className="absolute bottom-4 right-4 flex gap-2">
-              <button 
-                onClick={() => {
-                  setInputText('');
-                }} 
-                disabled={!inputText || isInputLocked}
-                className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-red-500 flex items-center gap-2 active:scale-90 transition-all disabled:text-gray-300"
-              >
-                {t('clear_btn')}
+                {scanSource === 'document' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('docs_btn')}
               </button>
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isInputLocked}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+              >
+                {scanSource === 'camera' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('camera_btn')}
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isInputLocked}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+              >
+                {scanSource === 'images' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('images_btn')}
+              </button>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-3xl border border-[#d4e3f7] bg-white/96">
+              <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
+              <textarea
+                id="podcast-text"
+                name="podcast-text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={isInputLocked}
+                placeholder={t('placeholder_text')}
+                className="h-32 w-full resize-none bg-transparent p-4 text-sm leading-relaxed text-zinc-800 outline-none transition-all placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500/20 disabled:text-zinc-400 lg:h-52"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-1">
+                <label className={classNames(subtleLabelClass, 'ml-2')}>{t('voice_label')}</label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={() => {
+                    setShowVoiceMenu((current) => !current);
+                    setShowLangMenu(false);
+                    setShowSortMenu(false);
+                  }}
+                  disabled={isInputLocked}
+                    className="flex w-full items-center justify-between rounded-2xl border border-[#c8daf2] bg-white px-4 py-3.5 text-[11px] font-black text-zinc-900 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.18)] transition-colors hover:bg-[#f8fbff] disabled:bg-zinc-100 disabled:text-zinc-400"
+                  >
+                    <span>{selectedVoiceLabel}</span>
+                    <span className="text-zinc-400">▾</span>
+                  </button>
+
+                  {showVoiceMenu && (
+                    <div
+                      ref={voiceMenuRef}
+                      className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[260px] min-w-full gap-1 overflow-y-auto rounded-2xl border border-[#c8daf2] bg-[#eef6ff] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(2,6,23,0.26)] outline-none duration-200"
+                    >
+                      {PREMIUM_VOICES.map((voice) => {
+                        const isSelected = voice.name === selectedVoice;
+
+                        return (
+                          <button
+                            key={voice.name}
+                            type="button"
+                            onClick={() => {
+                              setSelectedVoice(voice.name);
+                              setShowVoiceMenu(false);
+                            }}
+                            className={classNames(
+                              'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-semibold transition-colors',
+                              isSelected ? 'bg-blue-50 text-zinc-900' : 'text-zinc-700 hover:bg-sky-50'
+                            )}
+                          >
+                            <span>{voice.label}</span>
+                            <span className={classNames('text-xs', isSelected ? 'text-blue-700' : 'text-transparent')}>✓</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
               <div className="relative">
-                <button 
-                  onClick={() => setShowLangMenu(!showLangMenu)} 
-                  disabled={isInputLocked || !inputText} 
-                  className="px-4 py-2 bg-white shadow-md border border-gray-100 rounded-full text-[10px] font-black text-indigo-600 flex items-center gap-2 active:scale-90 transition-all"
+                <button
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    setShowLangMenu((current) => !current);
+                    setShowVoiceMenu(false);
+                    setShowSortMenu(false);
+                  }}
+                  disabled={isInputLocked || !inputText}
+                  className={classNames('flex min-w-0 min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#2156d9] px-3 text-[10px] font-black text-white shadow-[0_18px_36px_-24px_rgba(37,99,235,0.42)] transition-all active:scale-[0.98] disabled:bg-zinc-200 disabled:text-zinc-500 sm:text-[11px]', !isInputLocked && inputText ? 'hover:bg-[#1d4ed8]' : '')}
                 >
                   {isTranslating ? (
                     <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse"></span>
                       {t('translating_short')}
                     </span>
                   ) : t('translate_btn')}
                 </button>
-                
+
                 {showLangMenu && (
-                  <div 
+                  <div
                     ref={langMenuRef}
                     onKeyDown={handleLangKeyDown}
                     tabIndex={0}
-                    className="absolute top-full mt-2 right-0 bg-white border shadow-2xl rounded-2xl p-2 py-3 z-50 min-w-[180px] max-h-[280px] overflow-y-auto grid gap-1 outline-none custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-200"
+                    className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[280px] min-w-[180px] gap-1 overflow-y-auto rounded-2xl border border-sky-100 bg-[#eef6ff] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(2,6,23,0.26)] outline-none duration-200"
                   >
                     {LANGUAGES.map((lang) => (
-                      <button 
-                        key={lang.code} 
-                        onClick={() => handleTranslate(lang.code)} 
-                        className="text-left px-4 py-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-colors focus:bg-indigo-50 hover:bg-indigo-50 active:bg-indigo-100 focus:outline-none text-gray-700"
+                      <button
+                        key={lang.code}
+                        onClick={() => handleTranslate(lang.code)}
+                        className="whitespace-nowrap rounded-2xl px-4 py-2.5 text-left text-[11px] font-black text-zinc-700 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none active:bg-blue-50"
                       >
                         {lang.label}
                       </button>
@@ -3437,74 +3332,103 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-          
-            <div className="grid grid-cols-1 gap-3">
-              <div className="space-y-1">
-                <label htmlFor="voice-select" className="text-[10px] font-black uppercase text-gray-400 ml-2">{t('voice_label')}</label>
-                <select id="voice-select" name="voice-select" value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} disabled={isInputLocked} className="w-full p-4 bg-gray-50 rounded-2xl text-[11px] font-bold border-none appearance-none cursor-pointer disabled:text-gray-400">
-                  {PREMIUM_VOICES.map(v => <option key={v.name} value={v.name}>{v.label}</option>)}
-                </select>
-              </div>
-            </div>
 
-            <button onClick={handleGenerate} disabled={isGenerateDisabled} className="w-full min-h-[78px] rounded-3xl font-black text-sm uppercase bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 disabled:bg-gray-200 active:scale-95 transition-all relative overflow-hidden px-5 py-4 text-left">
-              {activePrimaryButton && (
-                <div 
-                  className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-500" 
-                  style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
-                />
-              )}
-              <div className="relative z-10">
-                {activePrimaryButton ? (
-                  <>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                        {activePrimaryButton.label}
-                      </span>
-                      <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
-                    </div>
-                    {retryNotice && (
-                      <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
-                        {retryNotice}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  t('generate_btn')
+              <button onClick={handleGenerate} disabled={isGenerateDisabled} className="relative min-w-0 min-h-[52px] overflow-hidden rounded-2xl bg-[#0891b2] px-4 py-3 text-center text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(8,145,178,0.42)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
+                {activePrimaryButton && (
+                  <div
+                    className="absolute inset-y-0 left-0 bg-white/12 transition-all duration-500"
+                    style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
+                  />
                 )}
-              </div>
-            </button>
+                <div className="relative z-10">
+                  {activePrimaryButton ? (
+                    <>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                          {activePrimaryButton.label}
+                        </span>
+                        <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
+                      </div>
+                      {retryNotice && (
+                        <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
+                          {retryNotice}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    t('generate_btn')
+                  )}
+                </div>
+              </button>
+            </div>
 
           </section>
         </div>
 
-        <section className="space-y-4 lg:col-start-2 lg:row-start-3 lg:self-start">
-          <h2 className="text-lg font-black px-2 text-gray-800 text-left">{t('library_title')}</h2>
-          <div className={classNames('space-y-3 p-4', activeLayoutPreset.panelClassName)}>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">{t('sort_label')}</span>
-              <select
-                value={librarySortMode}
-                onChange={(e) => setLibrarySortMode(e.target.value as LibrarySortMode)}
-                className="rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-black text-gray-700"
-              >
-                <option value="newest">{t('sort_newest')}</option>
-                <option value="oldest">{t('sort_oldest')}</option>
-                <option value="title">{t('sort_title')}</option>
-              </select>
+        <section className="order-3 relative space-y-4 md:col-start-2 md:row-start-2 md:order-none md:self-start">
+          <h2 className="px-2 text-left text-lg font-black text-slate-100">{t('library_title')}</h2>
+          <div className={classNames('relative z-20 space-y-3 p-4', activeLayoutPreset.panelClassName)}>
+            <div className="space-y-2">
+              <span className={subtleLabelClass}>{t('sort_label')}</span>
+              <div className="relative z-[70]">
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    setShowSortMenu((current) => !current);
+                    setShowLangMenu(false);
+                    setShowVoiceMenu(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-[1.6rem] border border-[#c8daf2] bg-white px-4 py-3.5 text-left shadow-[0_20px_34px_-28px_rgba(15,23,42,0.18)] transition-colors hover:bg-[#f8fbff]"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{t('sort_label')}</span>
+                    <span className="mt-1 block truncate text-sm font-black text-zinc-900">{librarySortLabel}</span>
+                  </span>
+                  <span className="ml-4 shrink-0 rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-blue-700">▾</span>
+                </button>
+
+                {showSortMenu && (
+                  <div
+                    ref={sortMenuRef}
+                    className="custom-scrollbar animate-in fade-in slide-in-from-top-2 absolute inset-x-0 top-full z-[80] mt-2 grid gap-1 overflow-hidden rounded-[1.6rem] border border-[#c8daf2] bg-[linear-gradient(180deg,rgba(247,251,255,0.99),rgba(232,241,252,0.97))] p-2.5 shadow-[0_28px_64px_-36px_rgba(2,6,23,0.32)] duration-200"
+                  >
+                    {(['newest', 'oldest', 'title'] as LibrarySortMode[]).map((mode) => {
+                      const label = mode === 'oldest' ? t('sort_oldest') : mode === 'title' ? t('sort_title') : t('sort_newest');
+                      const isSelected = librarySortMode === mode;
+
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => {
+                            setLibrarySortMode(mode);
+                            setShowSortMenu(false);
+                          }}
+                          className={classNames(
+                            'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-black transition-colors',
+                            isSelected ? 'bg-[#e7f1ff] text-zinc-900 shadow-[0_14px_28px_-26px_rgba(37,99,235,0.32)]' : 'text-zinc-700 hover:bg-[#eef7ff]'
+                          )}
+                        >
+                          <span>{label}</span>
+                          <span className={classNames('text-xs', isSelected ? 'text-blue-700' : 'text-transparent')}>✓</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {libraryCategories.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
                 <button
                   onClick={() => setActiveCategoryFilter('all')}
-                  className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
+                    className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
                     activeCategoryFilter === 'all'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-50 text-gray-600 border border-gray-100'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-[#c8daf2] bg-white text-zinc-800'
                   }`}
                 >
                   {t('all_categories')}
@@ -3512,123 +3436,331 @@ const App: React.FC = () => {
                 {libraryCategories.map((category) => (
                   <button
                     key={category}
-                    onClick={() => setActiveCategoryFilter(category)}
-                    className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
-                      activeCategoryFilter === category
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-50 text-gray-600 border border-gray-100'
-                    }`}
-                  >
-                    {category}
+                  onClick={() => setActiveCategoryFilter(category)}
+                  className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
+                    activeCategoryFilter === category
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-[#c8daf2] bg-white text-zinc-800'
+                  }`}
+                >
+                  {category}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <div className="grid gap-3 overflow-hidden">
-            {displayedLibrary.map((ep) => (
-              <div key={ep.id} onClick={() => handlePlayEpisode(ep)} className={`w-full min-w-0 p-4 rounded-[2rem] border transition-all flex items-center gap-3 cursor-pointer ${player.activeEpisode?.id === ep.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-white/92 border-white/80 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.35)] backdrop-blur'}`}>
-                <div className={`w-10 h-10 shrink-0 rounded-2xl flex items-center justify-center font-bold ${player.activeEpisode?.id === ep.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                  ✨
-                </div>
-                <div className="min-w-0 flex-1 text-left">
-                  <h3 className="text-sm font-black truncate">{ep.title}</h3>
-                  <p className={`text-[9px] uppercase font-bold ${player.activeEpisode?.id === ep.id ? 'text-white/60' : 'text-gray-400'}`}>
-                    {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {(getEpisodeCategories(ep).length > 0 ? getEpisodeCategories(ep) : [t('uncategorized_label')]).map((category) => (
-                      <span
-                        key={`${ep.id}-${category}`}
-                        className={`rounded-full px-2.5 py-1 text-[9px] font-black ${
-                          player.activeEpisode?.id === ep.id
-                            ? 'bg-white/15 text-white/85'
-                            : 'bg-indigo-50 text-indigo-600'
-                        }`}
+          <div className="relative z-10 grid gap-3">
+            {displayedLibrary.map((ep) => {
+              const isActiveEpisode = player.activeEpisode?.id === ep.id;
+              const episodeCategories = getEpisodeCategories(ep);
+              const episodeVoice = PREMIUM_VOICES.find((voice) => voice.name === ep.voice)?.label ?? ep.voice;
+              const episodeRuntime = formatTime(getEpisodeDuration(ep));
+              const libraryActionClass = isActiveEpisode
+                ? 'border-white/15 bg-white/12 text-white hover:bg-white/18'
+                : 'border-[#c8daf2] bg-white/96 text-slate-600 hover:bg-white hover:text-slate-900';
+
+              return (
+                <div
+                  key={ep.id}
+                  onClick={() => handlePlayEpisode(ep)}
+                  className={classNames(
+                    'w-full min-w-0 cursor-pointer rounded-[2rem] border p-4 transition-all duration-200 hover:-translate-y-0.5 sm:p-5',
+                    isActiveEpisode ? libraryItemActiveClass : libraryItemIdleClass
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={classNames(
+                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                      isActiveEpisode ? 'bg-white/18 text-white' : 'bg-white text-sky-700 shadow-[0_16px_28px_-24px_rgba(37,99,235,0.26)]'
+                    )}>
+                      <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
+                        <path d="M4 14v-4" />
+                        <path d="M8 17V11" />
+                        <path d="M12 20V8" />
+                        <path d="M16 15v-6" />
+                        <path d="M20 13v-2" />
+                      </svg>
+                    </div>
+
+                    <div className="min-w-0 flex-1 text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className={classNames('text-[9px] font-black uppercase tracking-[0.18em]', isActiveEpisode ? 'text-white/72' : 'text-slate-500')}>
+                            {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
+                          </p>
+                          <h3 className="mt-1 truncate text-[15px] font-black tracking-tight">{ep.title}</h3>
+                        </div>
+                        <span className={classNames(
+                          'shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black',
+                          isActiveEpisode ? 'bg-white/14 text-white/90' : 'border border-[#d4e3f7] bg-[#eef7ff] text-slate-700'
+                        )}>
+                          {episodeRuntime}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className={classNames(
+                          'rounded-full px-2.5 py-1 text-[9px] font-black',
+                          isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-[#d4e3f7] bg-white text-slate-700'
+                        )}>
+                          {t('voice_label')}: {episodeVoice}
+                        </span>
+                        {(episodeCategories.length > 0 ? episodeCategories : [t('uncategorized_label')]).map((category) => (
+                          <span
+                            key={`${ep.id}-${category}`}
+                            className={classNames(
+                              'rounded-full px-2.5 py-1 text-[9px] font-black',
+                              isActiveEpisode ? 'bg-white/12 text-white/84' : 'bg-[#edf4ff] text-slate-600'
+                            )}
+                          >
+                            {category}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openCategoryEditor(ep);
+                      }}
+                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
+                      title={t('edit_categories_btn')}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                        <path d="m9 7 1.5-2h9L18 8" />
+                        <path d="M5 9h13l-1 8H6L5 9Z" />
+                        <path d="M5 12H3" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handlePlaySummary(ep);
+                      }}
+                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
+                      title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
+                    >
+                      {summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading ? (
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                      ) : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? (
+                        <span className="text-[11px] font-black">II</span>
+                      ) : (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M5 10v4" />
+                          <path d="M9 8v8" />
+                          <path d="M13 6v12" />
+                          <path d="M17 9v6" />
+                          <path d="M21 11v2" />
+                        </svg>
+                      )}
+                    </button>
+                    {ep.notes && (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setShowNotesModal(ep);
+                        }}
+                        className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
+                        title={t('notes_title')}
                       >
-                        {category}
-                      </span>
-                    ))}
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M7 4h10a2 2 0 0 1 2 2v12l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2Z" />
+                          <path d="M9 9h6" />
+                          <path d="M9 12h6" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDownloadEpisode(ep);
+                      }}
+                      disabled={ep.generationStatus === 'processing'}
+                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-40', libraryActionClass)}
+                      title="Download MP3"
+                    >
+                      {isDownloading === ep.id || ep.generationStatus === 'processing' ? (
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                      ) : (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M12 4v10" />
+                          <path d="m8 10 4 4 4-4" />
+                          <path d="M5 19h14" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteEpisode(ep);
+                      }}
+                      className={classNames(
+                        'flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors',
+                        isActiveEpisode
+                          ? 'border-white/12 bg-white/8 text-white/86 hover:bg-white/16'
+                          : 'border-[#c8daf2] bg-white/96 text-slate-500 hover:bg-white hover:text-slate-900'
+                      )}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                        <path d="M5 7h14" />
+                        <path d="M9 7V5h6v2" />
+                        <path d="m8 10 1 8h6l1-8" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openCategoryEditor(ep);
-                    }}
-                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
-                    title={t('edit_categories_btn')}
-                  >
-                    🏷️
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void handlePlaySummary(ep); }}
-                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
-                    title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
-                  >
-                    {summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading
-                      ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                      : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying
-                        ? '❚❚'
-                        : '🔊'}
-                  </button>
-                  {ep.notes && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setShowNotesModal(ep); }}
-                      className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
-                      title={t('notes_title')}
-                    >
-                      📝
-                    </button>
-                  )}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(ep); }}
-                    disabled={ep.generationStatus === 'processing'}
-                    className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-gray-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${player.activeEpisode?.id === ep.id ? 'bg-white/10 text-white hover:bg-white/20' : ''}`}
-                    title="Download MP3"
-                  >
-                    {isDownloading === ep.id || ep.generationStatus === 'processing'
-                      ? <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                      : '📥'}
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); void handleDeleteEpisode(ep); }} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl opacity-30 hover:opacity-100 text-xl transition-opacity">×</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {library.length === 0 && (
-              <p className="text-center py-10 text-[10px] font-bold text-gray-300 uppercase tracking-widest border-2 border-dashed border-gray-100 rounded-[2rem]">{t('empty_library')}</p>
+              <p className="rounded-[2rem] border-2 border-dashed border-[#c8daf2] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-300">{t('empty_library')}</p>
             )}
             {library.length > 0 && displayedLibrary.length === 0 && (
-              <p className="text-center py-10 text-[10px] font-bold text-gray-300 uppercase tracking-widest border-2 border-dashed border-gray-100 rounded-[2rem]">{t('empty_category_filter')}</p>
+              <p className="rounded-[2rem] border-2 border-dashed border-[#c8daf2] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-300">{t('empty_category_filter')}</p>
             )}
           </div>
         </section>
 
       </main>
 
-      <div
-        className={activeLayoutPreset.dockClassName}
-        style={{ bottom: `${contentBottomInset}px` }}
-      >
-        <span className="hidden pl-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 sm:block">
-          {t('layout_dock_label')}
-        </span>
-        {layoutOptions.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            onClick={() => setSelectedLayoutVersion(preset.label)}
-            aria-pressed={selectedLayoutVersion === preset.label}
-            className={classNames(
-              activeLayoutPreset.dockButtonClassName,
-              selectedLayoutVersion === preset.label && activeLayoutPreset.dockButtonActiveClassName
-            )}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
+      {isSupabaseConfigured && showAuthPanel && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-[rgba(15,23,42,0.16)] backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setShowAuthPanel(false)}
+          />
+          <div className="fixed inset-x-0 top-0 z-50 px-4 pt-16 md:px-5 lg:px-6">
+            <div className="mx-auto flex max-w-[430px] justify-end md:max-w-[860px] lg:max-w-6xl">
+              <section
+                className={classNames('w-full max-w-[380px] space-y-4 p-5 animate-in fade-in slide-in-from-top-2 slide-in-from-right-4 duration-300', activeLayoutPreset.panelClassName)}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="text-left">
+                    <h2 className="text-lg font-black text-zinc-950">{t('auth_title')}</h2>
+                    {!authUser && (
+                      <p className="mt-2 text-base font-black tracking-tight text-zinc-950">
+                        {t('hero_feature_title')}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+                      {authUser ? t('auth_subtitle_signed_in') : t('auth_subtitle_signed_out')}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setShowAuthPanel(false)}
+                    className="text-2xl text-zinc-400 transition-colors hover:text-zinc-700"
+                    aria-label={t('close_btn')}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {cloudFeedback && (
+                  <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
+                    {isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}
+                  </div>
+                )}
+
+                {authFeedback && (
+                  <div
+                    className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
+                      authFeedback.kind === 'error'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : authFeedback.kind === 'success'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-sky-100 bg-sky-50 text-zinc-700'
+                    }`}
+                  >
+                    {authFeedback.message}
+                  </div>
+                )}
+
+                {authUser ? (
+                  <>
+                    <div className="rounded-3xl border border-sky-100 bg-sky-50/80 p-5 text-left">
+                      <p className={subtleLabelClass}>{t('auth_signed_in_as')}</p>
+                      <p className="mt-2 break-all text-sm font-bold text-zinc-900">{authStatusEmail}</p>
+                    </div>
+
+                    <button
+                      onClick={() => { void handleSignOut(); }}
+                      disabled={isAuthLoading}
+                      className={classNames('w-full min-h-[58px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 active:scale-95 transition-all', darkButtonClass)}
+                    >
+                      {t('auth_sign_out_btn')}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50/80 p-1">
+                      <button
+                        onClick={() => setAuthMode('signIn')}
+                        className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                          authMode === 'signIn' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                        }`}
+                      >
+                        {t('auth_sign_in_tab')}
+                      </button>
+                      <button
+                        onClick={() => setAuthMode('signUp')}
+                        className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                          authMode === 'signUp' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                        }`}
+                      >
+                        {t('auth_sign_up_tab')}
+                      </button>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <div className="space-y-1">
+                        <label htmlFor="auth-email" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_email_label')}</label>
+                        <input
+                          id="auth-email"
+                          name="auth-email"
+                          type="email"
+                          autoComplete="email"
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          className={darkFieldClass}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="auth-password" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_password_label')}</label>
+                        <input
+                          id="auth-password"
+                          name="auth-password"
+                          type="password"
+                          autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          className={darkFieldClass}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => { void handleSubmitAuth(); }}
+                      disabled={isAuthSubmitDisabled}
+                      className={classNames('w-full min-h-[64px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none active:scale-95 transition-all', accentButtonClass)}
+                    >
+                      {isAuthLoading
+                        ? t('auth_loading')
+                        : authMode === 'signIn'
+                          ? t('auth_sign_in_btn')
+                          : t('auth_sign_up_btn')}
+                    </button>
+                  </>
+                )}
+              </section>
+            </div>
+          </div>
+        </>
+      )}
 
       {player.activeEpisode && (
         <div ref={playerShellRef} className={activeLayoutPreset.playerShellClassName}>
@@ -3636,7 +3768,7 @@ const App: React.FC = () => {
             <div className="flex justify-center">
               <button
                 onClick={() => setIsPlayerCollapsed(prev => !prev)}
-                className="flex h-7 w-12 items-center justify-center rounded-full border border-gray-100 bg-white text-sm font-black text-indigo-600 shadow-sm transition-colors hover:bg-indigo-50"
+                className="flex h-7 w-12 items-center justify-center rounded-full border border-[#c8daf2] bg-white text-sm font-black text-zinc-700 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)] transition-colors hover:bg-[#f8fbff]"
                 title={isPlayerCollapsed ? t('player_show') : t('player_hide')}
                 aria-label={isPlayerCollapsed ? t('player_show') : t('player_hide')}
               >
@@ -3645,10 +3777,10 @@ const App: React.FC = () => {
             </div>
 
             {isPlayerCollapsed ? (
-              <div className="flex items-center gap-3 rounded-[2rem] border border-indigo-100 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-3 rounded-[2rem] border border-[#c8daf2] bg-white/92 px-4 py-3 shadow-[0_22px_40px_-32px_rgba(15,23,42,0.28)]">
                 <button
                   onClick={() => { void handleTogglePlay(); }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-lg text-white shadow-[0_10px_20px_-10px_rgba(79,70,229,0.45)]"
+                  className={classNames('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg text-white', accentButtonClass)}
                 >
                   {isLoadingChunk ? (
                     <div className="w-4 h-4 border-2 border-white/25 border-t-white rounded-full animate-spin"></div>
@@ -3657,71 +3789,105 @@ const App: React.FC = () => {
                   )}
                 </button>
                 <div className="min-w-0 flex-1 text-left">
-                  <h4 className="truncate text-[13px] font-black text-gray-800">{player.activeEpisode.title}</h4>
-                  <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-500/80">
-                    {formatTime(player.currentTime)} / {formatTime(player.duration)}
+                  <h4 className="truncate text-[13px] font-black text-zinc-900">{player.activeEpisode.title}</h4>
+                  <p className="mt-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                    {t('now_playing_label')} · {formatTime(player.currentTime)} / {activeEpisodeRuntime}
                   </p>
                 </div>
                 <button
                   onClick={() => setIsPlayerCollapsed(false)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-indigo-600"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#c8daf2] bg-white text-zinc-700 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)]"
                   title={t('player_show')}
                 >
                   ↑
                 </button>
               </div>
             ) : (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    onClick={() => setShowSpeedControls(prev => !prev)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
-                    title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
-                  >
-                    <span className="text-base leading-none">⚙</span>
-                    <span>{playbackRate.toFixed(1)}x</span>
-                  </button>
+              <div className="rounded-[2.25rem] border border-[#c8daf2] bg-white/86 p-4 shadow-[0_28px_54px_-40px_rgba(15,23,42,0.34)] sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className={subtleLabelClass}>{t('now_playing_label')}</p>
+                    <h4 className="mt-2 truncate text-[15px] font-black tracking-tight text-zinc-950 sm:text-[16px]">
+                      {player.activeEpisode.title}
+                    </h4>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-slate-700">
+                        {t('voice_label')}: {activeEpisodeVoiceLabel}
+                      </span>
+                      <span className="rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-slate-700">
+                        {t('runtime_label')}: {activeEpisodeRuntime}
+                      </span>
+                      {player.activeEpisode.generationStatus === 'processing' && (
+                        <span className="rounded-full border border-[#d4e3f7] bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700">
+                          {t('creating_podcast')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-                  <button
-                    onClick={handleAddEpisodeBookmark}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-3 py-2 text-[11px] font-black text-indigo-600 shadow-sm"
-                    title={t('add_bookmark_btn')}
-                  >
-                    <span className="text-base leading-none">🔖</span>
-                    <span>{t('add_bookmark_btn')}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowSpeedControls(prev => !prev)}
+                      className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                      title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                        <path d="M12 4v3" />
+                        <path d="M12 17v3" />
+                        <path d="M4 12h3" />
+                        <path d="M17 12h3" />
+                        <path d="m6.5 6.5 2.1 2.1" />
+                        <path d="m15.4 15.4 2.1 2.1" />
+                        <path d="m17.5 6.5-2.1 2.1" />
+                        <path d="m8.6 15.4-2.1 2.1" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      <span>{playbackRate.toFixed(1)}x</span>
+                    </button>
+
+                    <button
+                      onClick={handleAddEpisodeBookmark}
+                      className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                      title={t('add_bookmark_btn')}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                        <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
+                      </svg>
+                      <span>{t('add_bookmark_btn')}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-2 group">
-                  <div className="relative h-2 w-full bg-indigo-50 rounded-full overflow-hidden shadow-inner">
-                    <div 
-                      className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(79,70,229,0.4)]"
+                <div className="mt-5 space-y-2">
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-slate-200/90 shadow-inner">
+                    <div
+                      className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-[#1d4ed8] via-[#0284c7] to-[#06b6d4] transition-all duration-300 ease-out shadow-[0_0_12px_rgba(37,99,235,0.28)]"
                       style={{ width: `${player.duration ? (player.currentTime / player.duration) * 100 : 0}%` }}
                     />
-                    <input 
+                    <input
                       id="playback-seek"
                       name="playback-seek"
-                      type="range" 
-                      min="0" 
-                      max="100" 
+                      type="range"
+                      min="0"
+                      max="100"
                       step="0.1"
                       value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
                       onChange={(e) => { void handleSeek(parseFloat(e.target.value)); }}
                       aria-label="Playback position"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 z-10"
                     />
                   </div>
                   <div className="flex justify-between px-1.5">
-                    <span className="text-[10px] font-black tabular-nums text-indigo-600/80 tracking-tight">{formatTime(player.currentTime)}</span>
-                    <span className="text-[10px] font-black tabular-nums text-gray-400/80 tracking-tight">-{formatTime(Math.max(0, player.duration - player.currentTime))}</span>
+                    <span className="text-[10px] font-black tabular-nums tracking-tight text-zinc-800">{formatTime(player.currentTime)}</span>
+                    <span className="text-[10px] font-black tabular-nums tracking-tight text-zinc-500">-{formatTime(Math.max(0, player.duration - player.currentTime))}</span>
                   </div>
                 </div>
 
                 {showSpeedControls && (
-                  <div className="rounded-[1.75rem] border border-indigo-100 bg-indigo-50/70 p-4">
+                  <div className="mt-4 rounded-[1.75rem] border border-[#d4e3f7] bg-[#eef7ff]/92 p-4">
                     <div className="flex items-center justify-between gap-4">
-                      <label htmlFor="player-speed-slider" className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('speed_label')}</label>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-indigo-600 shadow-sm">{playbackRate.toFixed(1)}x</span>
+                      <label htmlFor="player-speed-slider" className={subtleLabelClass}>{t('speed_label')}</label>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-zinc-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.2)]">{playbackRate.toFixed(1)}x</span>
                     </div>
                     <input
                       id="player-speed-slider"
@@ -3732,23 +3898,23 @@ const App: React.FC = () => {
                       step="0.1"
                       value={playbackRate}
                       onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
-                      className="mt-3 w-full h-1.5 bg-white rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      className="mt-3 h-1.5 w-full appearance-none cursor-pointer rounded-lg bg-slate-200 accent-blue-600"
                     />
                   </div>
                 )}
 
                 {activeEpisodeBookmarks.length > 0 && (
-                  <div className="rounded-[1.75rem] border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="mt-4 rounded-[1.75rem] border border-[#d4e3f7] bg-[#eef7ff]/92 p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-[10px] font-black uppercase tracking-wide text-indigo-500">{t('bookmarks_title')}</span>
-                      <span className="text-[10px] font-bold text-gray-400">{activeEpisodeBookmarks.length}</span>
+                      <span className={subtleLabelClass}>{t('bookmarks_title')}</span>
+                      <span className="text-[10px] font-black text-zinc-500">{activeEpisodeBookmarks.length}</span>
                     </div>
                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                       {activeEpisodeBookmarks.map((bookmark) => (
                         <button
                           key={bookmark.id}
                           onClick={() => { if (player.activeEpisode) void jumpToEpisodeTime(player.activeEpisode, bookmark.time); }}
-                          className="shrink-0 rounded-full bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-600 transition-colors hover:bg-indigo-100"
+                          className="shrink-0 rounded-full border border-[#c8daf2] bg-white px-3 py-2 text-[11px] font-black text-zinc-900 transition-colors hover:bg-[#f8fbff]"
                         >
                           {formatTime(bookmark.time)}
                         </button>
@@ -3757,85 +3923,143 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 truncate mr-6 text-left">
-                    <h4 className="text-[13px] font-black truncate text-gray-800 tracking-tight leading-tight">{player.activeEpisode.title}</h4>
-                    <div className="flex items-center gap-2.5 mt-0.5">
-                      <span className="text-[8px] font-black uppercase text-indigo-500/70 tracking-widest">{t('ai_voice_mode')}</span>
-                      {player.activeEpisode.generationStatus === 'processing' && (
-                        <span className="text-[8px] bg-indigo-50/50 text-indigo-600/70 px-2 py-0.5 rounded-full font-black border border-indigo-100/50">
-                          {t('creating_podcast')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-5">
-                    <button onClick={() => { void handleSkip(-15); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                <div className="mt-5 rounded-[1.9rem] border border-[#d4e3f7] bg-[#eef7ff]/94 px-4 py-4 sm:px-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      onClick={() => { void handleSkip(-15); }}
+                      className="flex min-w-[64px] flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-black text-zinc-600 transition-colors active:scale-90 hover:text-zinc-900"
+                    >
                       <span className="text-lg">↺</span>
                       <span className="mt-[-4px]">15</span>
                     </button>
-                    <button 
-                      onClick={() => { void handleTogglePlay(); }} 
-                      className="w-14 h-14 bg-indigo-600 text-white rounded-[1.75rem] flex items-center justify-center text-xl shadow-[0_10px_25px_-5px_rgba(79,70,229,0.4)] active:scale-95 transition-all relative hover:bg-indigo-700"
+                    <button
+                      onClick={() => { void handleTogglePlay(); }}
+                      className={classNames('relative flex h-16 w-16 items-center justify-center rounded-full text-xl text-white transition-all active:scale-95', accentButtonClass)}
                     >
                       {isLoadingChunk ? (
-                        <div className="w-5 h-5 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
+                        <div className="h-5 w-5 rounded-full border-2 border-white/25 border-t-white animate-spin" />
                       ) : (
                         player.isPlaying ? '❚❚' : '▶'
                       )}
                     </button>
-                    <button onClick={() => { void handleSkip(30); }} className="text-gray-300 font-black text-[10px] hover:text-indigo-600 transition-colors active:scale-90 flex flex-col items-center gap-0.5">
+                    <button
+                      onClick={() => { void handleSkip(30); }}
+                      className="flex min-w-[64px] flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-black text-zinc-600 transition-colors active:scale-90 hover:text-zinc-900"
+                    >
                       <span className="text-lg">↻</span>
                       <span className="mt-[-4px]">30</span>
                     </button>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
       )}
 
       {showNotesModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-sky-100 bg-[#eaf4ff] shadow-[0_36px_90px_-54px_rgba(2,6,23,0.36)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-black text-gray-800">{t('notes_title')}</h3>
-                <button onClick={() => setShowNotesModal(null)} className="text-2xl text-gray-400 hover:text-gray-600">×</button>
+                <h3 className="text-lg font-black text-zinc-950">{t('notes_title')}</h3>
+                <button onClick={() => setShowNotesModal(null)} className="text-2xl text-zinc-400 hover:text-zinc-700">×</button>
               </div>
               <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-4 pr-1">
                 {resolvedModalNotes ? (
                   <>
-                    <section className="rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-500 to-sky-500 p-6 text-white shadow-lg">
+                    <section className="rounded-3xl bg-gradient-to-br from-blue-600 via-sky-500 to-cyan-500 p-6 text-white shadow-lg">
                       <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{notesLabels.summary}</p>
-                      <h4 className="mt-2 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
-                      <p className="mt-3 text-sm leading-relaxed text-white/85">{resolvedModalNotes.summary}</p>
+                      {isEditingSummary ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="space-y-1">
+                            <label htmlFor="summary-title" className="text-[10px] font-black uppercase tracking-[0.22em] text-white/70">
+                              {t('summary_title_label')}
+                            </label>
+                            <input
+                              id="summary-title"
+                              name="summary-title"
+                              value={summaryTitleDraft}
+                              onChange={(event) => setSummaryTitleDraft(event.target.value)}
+                              className="w-full rounded-2xl border border-white/18 bg-white/14 px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-white/20"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label htmlFor="summary-body" className="text-[10px] font-black uppercase tracking-[0.22em] text-white/70">
+                              {t('summary_body_label')}
+                            </label>
+                            <textarea
+                              id="summary-body"
+                              name="summary-body"
+                              value={summaryBodyDraft}
+                              onChange={(event) => setSummaryBodyDraft(event.target.value)}
+                              className="min-h-[140px] w-full resize-none rounded-2xl border border-white/18 bg-white/14 px-4 py-3 text-sm leading-relaxed text-white outline-none focus:ring-2 focus:ring-white/20"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <h4 className="mt-2 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
+                          <p className="mt-3 text-sm leading-relaxed text-white/85">{resolvedModalNotes.summary}</p>
+                        </>
+                      )}
                     </section>
 
-                    <button
-                      onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
-                      className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all ${
-                        isModalSummaryPlaying
-                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                          : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                      }`}
-                    >
-                      {isModalSummaryLoading ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          {t('listen_summary_btn')}
-                        </span>
-                      ) : isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
-                    </button>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {isEditingSummary ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              setSummaryTitleDraft(resolvedModalNotes.title);
+                              setSummaryBodyDraft(resolvedModalNotes.summary);
+                              setIsEditingSummary(false);
+                            }}
+                            className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
+                          >
+                            {t('cancel_btn')}
+                          </button>
+                          <button
+                            onClick={saveSummaryEdits}
+                            disabled={!isSummaryDirty}
+                            className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500', accentButtonClass)}
+                          >
+                            {t('save_summary_btn')}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setIsEditingSummary(true)}
+                            className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
+                          >
+                            {t('edit_summary_btn')}
+                          </button>
+                          <button
+                            onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
+                            className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all ${
+                              isModalSummaryPlaying
+                                ? 'border border-sky-100 bg-white/92 text-zinc-700'
+                                : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20'
+                            }`}
+                          >
+                            {isModalSummaryLoading ? (
+                              <span className="flex items-center justify-center gap-2">
+                                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                {t('listen_summary_btn')}
+                              </span>
+                            ) : isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                          </button>
+                        </>
+                      )}
+                    </div>
 
                     {resolvedModalNotes.sections.map((section, index) => (
-                      <section key={`${section.heading}-${index}`} className="rounded-3xl border border-gray-100 bg-gray-50 p-5 shadow-sm">
-                        <h5 className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">{section.heading}</h5>
+                      <section key={`${section.heading}-${index}`} className="rounded-3xl border border-sky-100 bg-white/92 p-5 shadow-sm">
+                        <h5 className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{section.heading}</h5>
                         <ul className="mt-3 space-y-2">
                           {section.bullets.map((bullet, bulletIndex) => (
-                            <li key={`${section.heading}-${bulletIndex}`} className="flex items-start gap-3 text-sm leading-relaxed text-gray-700">
-                              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
+                            <li key={`${section.heading}-${bulletIndex}`} className="flex items-start gap-3 text-sm leading-relaxed text-zinc-700">
+                              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
                               <span>{bullet}</span>
                             </li>
                           ))}
@@ -3844,14 +4068,14 @@ const App: React.FC = () => {
                     ))}
                   </>
                 ) : (
-                  <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                  <div className="rounded-3xl border border-dashed border-sky-100 bg-white/92 p-6 text-sm text-zinc-500">
                     {t('no_notes')}
                   </div>
                 )}
               </div>
               <button 
                 onClick={() => setShowNotesModal(null)}
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+                className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase text-white transition-all active:scale-95', accentButtonClass)}
               >
                 {t('close_btn')}
               </button>
@@ -3861,19 +4085,19 @@ const App: React.FC = () => {
       )}
 
       {categoryEditorEpisode && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-sky-100 bg-[#eaf4ff] shadow-[0_36px_90px_-54px_rgba(2,6,23,0.36)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-5">
               <div className="flex justify-between items-center gap-4">
                 <div className="min-w-0">
-                  <h3 className="text-lg font-black text-gray-800">{t('categories_title')}</h3>
-                  <p className="mt-1 truncate text-xs font-bold text-gray-400">{categoryEditorEpisode.title}</p>
+                  <h3 className="text-lg font-black text-zinc-950">{t('categories_title')}</h3>
+                  <p className="mt-1 truncate text-xs font-bold text-zinc-500">{categoryEditorEpisode.title}</p>
                 </div>
-                <button onClick={closeCategoryEditor} className="text-2xl text-gray-400 hover:text-gray-600">×</button>
+                <button onClick={closeCategoryEditor} className="text-2xl text-zinc-400 hover:text-zinc-700">×</button>
               </div>
 
-              <div className="rounded-3xl border border-gray-100 bg-gray-50 p-5 space-y-3">
-                <label htmlFor="episode-categories" className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">
+              <div className="rounded-3xl border border-sky-100 bg-white/92 p-5 space-y-3">
+                <label htmlFor="episode-categories" className={subtleLabelClass}>
                   {t('categories_title')}
                 </label>
                 <input
@@ -3882,21 +4106,21 @@ const App: React.FC = () => {
                   value={categoryDraft}
                   onChange={(e) => setCategoryDraft(e.target.value)}
                   placeholder={t('category_placeholder')}
-                  className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-2xl border border-sky-100 bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
-                <p className="text-xs leading-relaxed text-gray-500">{t('category_hint')}</p>
+                <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
               </div>
 
               <button
                 onClick={saveEpisodeCategories}
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+                className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase text-white transition-all active:scale-95', accentButtonClass)}
               >
                 {t('save_categories_btn')}
               </button>
 
               <button
                 onClick={closeCategoryEditor}
-                className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all"
+                className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase transition-all active:scale-95', darkButtonClass)}
               >
                 {t('close_btn')}
               </button>
@@ -3910,11 +4134,11 @@ const App: React.FC = () => {
           width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
+          background: rgba(148, 163, 184, 0.18);
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #4f46e5;
+          background: linear-gradient(180deg, #2563eb 0%, #06b6d4 100%);
           border-radius: 10px;
         }
       `}</style>
