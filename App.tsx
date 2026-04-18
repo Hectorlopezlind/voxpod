@@ -546,7 +546,7 @@ const LAYOUT_PRESET: LayoutPreset = {
   heroGridClassName: 'relative flex min-h-[230px] items-end p-4 sm:min-h-[270px] sm:p-5 md:min-h-[310px] md:p-6 lg:min-h-[340px]',
   heroMetricCardClassName: 'rounded-[1.65rem] border border-[#d8d0ed]/88 bg-[rgba(242,242,242,0.16)] p-4 backdrop-blur',
   panelClassName: 'rounded-[2rem] border border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.96))] shadow-[0_24px_64px_-42px_rgba(32,15,93,0.42)] backdrop-blur-xl',
-  playerShellClassName: 'fixed bottom-0 left-0 right-0 z-40 flex flex-col gap-4 rounded-t-[3.2rem] border-t border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.97))] p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-[0_-22px_54px_-22px_rgba(32,15,93,0.42)] backdrop-blur-2xl animate-in slide-in-from-bottom-full duration-700 ease-out md:bottom-4 md:left-1/2 md:right-auto md:w-[min(860px,calc(100vw-1.5rem))] md:-translate-x-1/2 md:rounded-[2.4rem] md:border lg:bottom-5 lg:w-[min(1180px,calc(100vw-2rem))] lg:rounded-[2.6rem]',
+  playerShellClassName: 'pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex flex-col gap-4 rounded-t-[3.2rem] border-t border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.97))] p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-[0_-22px_54px_-22px_rgba(32,15,93,0.42)] backdrop-blur-2xl animate-in slide-in-from-bottom-full duration-700 ease-out md:bottom-4 md:left-1/2 md:right-auto md:w-[min(860px,calc(100vw-1.5rem))] md:-translate-x-1/2 md:rounded-[2.4rem] md:border lg:bottom-5 lg:w-[min(1180px,calc(100vw-2rem))] lg:rounded-[2.6rem]',
 };
 
 const getScopedLibraryStorageKey = (userId?: string | null) =>
@@ -3051,6 +3051,36 @@ const App: React.FC = () => {
     });
   };
 
+  const handleClosePlayer = () => {
+    const activeEpisode = player.activeEpisode;
+    if (activeEpisode) {
+      const el = initAudioElement();
+      const chunkOffset = getEpisodeOffset(activeEpisode, player.currentChunkIndex);
+      const chunkTime = el.src
+        ? el.currentTime || 0
+        : Math.max(0, player.currentTime - chunkOffset);
+
+      saveBookmark(activeEpisode.id, player.currentChunkIndex, chunkTime);
+      flushLibraryPersistence();
+    }
+
+    stopSummaryPlayback();
+    playRequestRef.current += 1;
+    stopAudio();
+    setMediaSessionPlaybackState(false);
+    setIsLoadingChunk(false);
+    setShowSpeedControls(false);
+    setIsPlayerCollapsed(false);
+    setPlayer(prev => ({
+      ...prev,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      activeEpisode: null,
+      currentChunkIndex: 0
+    }));
+  };
+
   const handleTogglePlay = async (force?: boolean) => {
     if (!player.activeEpisode) return;
     const shouldPlay = typeof force === 'boolean' ? force : !player.isPlaying;
@@ -3555,6 +3585,12 @@ const App: React.FC = () => {
     setCameraShots([]);
     setCameraError(null);
     setError(null);
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
     setShowCameraCapture(true);
   };
 
@@ -3791,7 +3827,11 @@ const App: React.FC = () => {
         ? Math.max(0.08, scanSession.completedItems / scanSession.totalItems)
         : 0.08;
       return {
-        label: t('loading_text'),
+        label: scanSource === 'camera'
+          ? t('scanning_camera')
+          : scanSource === 'images'
+            ? t('scanning_images')
+            : t('scanning_pdf'),
         remainingSeconds: Math.max(0, scanSession.estimatedSeconds * (1 - progress)),
         progress,
       };
@@ -3810,9 +3850,9 @@ const App: React.FC = () => {
   const activeEpisodeRuntime = player.activeEpisode
     ? formatTime(getEpisodeDuration(player.activeEpisode))
     : formatTime(player.duration);
-  const activeEpisodeVoiceLabel = player.activeEpisode
-    ? PREMIUM_VOICES.find((voice) => voice.name === player.activeEpisode.voice)?.label ?? player.activeEpisode.voice
-    : '';
+  const activePrimaryButtonProgressPercent = activePrimaryButton
+    ? Math.max(8, Math.min(100, Math.round(activePrimaryButton.progress * 100)))
+    : 0;
   const activeImportSession = importSessionRef.current;
   const canGenerateFromImportSession = (() => {
     if (!isScanning || !activeImportSession) return false;
@@ -4183,29 +4223,44 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              <button onClick={handleGenerate} disabled={isGenerateDisabled} title={t('generate_btn_hint')} aria-label={t('generate_btn_hint')} className="relative min-w-0 min-h-[52px] overflow-hidden rounded-2xl bg-[#7763BE] px-4 py-3 text-center text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(119,99,190,0.38)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
+              <button onClick={handleGenerate} disabled={isGenerateDisabled} title={t('generate_btn_hint')} aria-label={t('generate_btn_hint')} className="relative min-w-0 min-h-[58px] overflow-hidden rounded-2xl bg-[#7763BE] px-4 py-3 text-left text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(119,99,190,0.38)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
                 {activePrimaryButton && (
                   <div
-                    className="absolute inset-y-0 left-0 bg-white/12 transition-all duration-500"
+                    className="absolute inset-y-0 left-0 bg-[linear-gradient(90deg,rgba(57,27,166,0.96),rgba(83,57,190,0.92))] transition-all duration-500"
                     style={{ width: `${Math.min(100, activePrimaryButton.progress * 100)}%` }}
                   />
                 )}
+                {activePrimaryButton && (
+                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),rgba(255,255,255,0.04))]" />
+                )}
                 <div className="relative z-10">
                   {activePrimaryButton ? (
-                    <>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/80">
+                        <span>{t('progress_label')}</span>
+                        <span>{activePrimaryButtonProgressPercent}%</span>
+                      </div>
                       <div className="flex items-center justify-between gap-4">
-                        <span className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                          {activePrimaryButton.label}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-white" />
+                          <span className="truncate">{activePrimaryButton.label}</span>
                         </span>
-                        <span className="tabular-nums">{formatCountdown(activePrimaryButton.remainingSeconds)}</span>
+                        <span className="shrink-0 text-right tabular-nums">
+                          {formatCountdown(activePrimaryButton.remainingSeconds)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
+                        <div
+                          className="h-full rounded-full bg-white transition-all duration-500"
+                          style={{ width: `${activePrimaryButtonProgressPercent}%` }}
+                        />
                       </div>
                       {retryNotice && (
                         <div className="mt-2 text-[10px] font-bold normal-case tracking-normal text-white/85">
                           {retryNotice}
                         </div>
                       )}
-                    </>
+                    </div>
                   ) : (
                     t('generate_btn')
                   )}
@@ -4652,18 +4707,7 @@ const App: React.FC = () => {
 
       {player.activeEpisode && (
         <div ref={playerShellRef} className={activeLayoutPreset.playerShellClassName}>
-          <div className="max-w-5xl mx-auto w-full flex flex-col gap-4">
-            <div className="flex justify-center">
-              <button
-                onClick={() => setIsPlayerCollapsed(prev => !prev)}
-                className="flex h-7 w-12 items-center justify-center rounded-full border border-[#d8d0ed] bg-white text-sm font-black text-zinc-700 shadow-[0_14px_28px_-24px_rgba(32,15,93,0.22)] transition-colors hover:bg-[#f7f4fc]"
-                title={isPlayerCollapsed ? t('player_show') : t('player_hide')}
-                aria-label={isPlayerCollapsed ? t('player_show') : t('player_hide')}
-              >
-                {isPlayerCollapsed ? '↑' : '↓'}
-              </button>
-            </div>
-
+          <div className="pointer-events-auto mx-auto flex w-full max-w-5xl flex-col gap-4">
             {isPlayerCollapsed ? (
               <div className="flex items-center gap-3 rounded-[2rem] border border-[#d8d0ed] bg-white/92 px-4 py-3 shadow-[0_22px_40px_-32px_rgba(32,15,93,0.26)]">
                 <button
@@ -4692,6 +4736,14 @@ const App: React.FC = () => {
                 >
                   ↑
                 </button>
+                <button
+                  onClick={handleClosePlayer}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#d8d0ed] bg-white text-xl leading-none text-zinc-700 shadow-[0_14px_28px_-24px_rgba(32,15,93,0.22)] transition-colors hover:bg-[#f7f4fc]"
+                  title={t('player_close')}
+                  aria-label={t('player_close')}
+                >
+                  ×
+                </button>
               </div>
             ) : (
               <div className="rounded-[2.25rem] border border-[#d8d0ed] bg-white/88 p-4 shadow-[0_28px_54px_-40px_rgba(32,15,93,0.32)] sm:p-5">
@@ -4703,16 +4755,8 @@ const App: React.FC = () => {
                     </h4>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
-                        {t('voice_label')}: {activeEpisodeVoiceLabel}
-                      </span>
-                      <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
                         {t('runtime_label')}: {activeEpisodeRuntime}
                       </span>
-                      {player.activeEpisode.generationStatus === 'processing' && (
-                        <span className="rounded-full border border-[#d8d0ed] bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700">
-                          {t('creating_podcast')}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -4747,6 +4791,24 @@ const App: React.FC = () => {
                         <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
                       </svg>
                       <span>{t('add_bookmark_btn')}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsPlayerCollapsed(true)}
+                      className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-lg font-black', darkButtonClass)}
+                      title={t('player_hide')}
+                      aria-label={t('player_hide')}
+                    >
+                      ↓
+                    </button>
+
+                    <button
+                      onClick={handleClosePlayer}
+                      className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-xl leading-none', darkButtonClass)}
+                      title={t('player_close')}
+                      aria-label={t('player_close')}
+                    >
+                      ×
                     </button>
                   </div>
                 </div>
@@ -4859,13 +4921,13 @@ const App: React.FC = () => {
       )}
 
       {showCameraCapture && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(15,23,42,0.26)] p-3 backdrop-blur-sm md:items-center md:p-6">
-          <div role="dialog" aria-modal="true" aria-labelledby="camera-capture-title" aria-describedby="camera-capture-description" className="w-full max-w-xl overflow-hidden rounded-[2.2rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.36)]">
-            <div className="space-y-4 p-5 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[rgba(15,23,42,0.26)] p-0 backdrop-blur-sm md:items-center md:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="camera-capture-title" aria-describedby="camera-capture-description" className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-[#f1edf9] shadow-none md:h-auto md:max-w-xl md:rounded-[2.2rem] md:border md:border-[#d8d0ed] md:shadow-[0_36px_90px_-54px_rgba(32,15,93,0.36)]">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h3 id="camera-capture-title" className="text-lg font-black text-zinc-950">{t('camera_modal_title')}</h3>
-                  <p id="camera-capture-description" className="mt-1 text-sm leading-relaxed text-zinc-500">{t('camera_modal_body')}</p>
+                  <p id="camera-capture-description" className="mt-1 hidden text-sm leading-relaxed text-zinc-500 md:block">{t('camera_modal_body')}</p>
                 </div>
                 <button onClick={closeCameraCapture} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
@@ -4894,7 +4956,7 @@ const App: React.FC = () => {
                     autoPlay
                     playsInline
                     muted
-                    className="h-[320px] w-full bg-zinc-950 object-cover sm:h-[420px]"
+                    className="h-[52dvh] w-full bg-zinc-950 object-cover sm:h-[420px]"
                   />
                 )}
               </div>
@@ -4938,7 +5000,7 @@ const App: React.FC = () => {
                 </div>
               ) : null}
 
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="mt-auto grid gap-2 sm:grid-cols-2">
                 <button
                   onClick={closeCameraCapture}
                   title={t('cancel_btn')}
