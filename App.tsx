@@ -4132,7 +4132,16 @@ const App: React.FC = () => {
                     className="flex w-full items-center justify-between rounded-2xl border border-[#d8d0ed] bg-white px-4 py-3.5 text-[11px] font-black text-zinc-900 shadow-[0_16px_34px_-28px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc] disabled:bg-zinc-100 disabled:text-zinc-400"
                   >
                     <span>{selectedVoiceLabel}</span>
-                    <span className="text-zinc-400">▾</span>
+                    <span
+                      className={classNames(
+                        'ml-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d8d0ed] bg-[#eee9f8] text-[#391BA6] shadow-[0_12px_24px_-18px_rgba(57,27,166,0.28)] transition-transform',
+                        showVoiceMenu && 'rotate-180'
+                      )}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[2.4]">
+                        <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
                   </button>
 
                   {showVoiceMenu && (
@@ -4761,69 +4770,76 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="rounded-[2.25rem] border border-[#d8d0ed] bg-white/88 p-4 shadow-[0_28px_54px_-40px_rgba(32,15,93,0.32)] sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1 text-left">
-                    <p className={subtleLabelClass}>{t('now_playing_label')}</p>
-                    <h4 className="mt-2 truncate text-[15px] font-black tracking-tight text-zinc-950 sm:text-[16px]">
-                      {player.activeEpisode.title}
-                    </h4>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className={subtleLabelClass}>{t('now_playing_label')}</p>
+                      <h4 className="mt-2 truncate text-[15px] font-black tracking-tight text-zinc-950 sm:text-[16px]">
+                        {player.activeEpisode.title}
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsPlayerCollapsed(true)}
+                        className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-lg font-black', darkButtonClass)}
+                        title={t('player_hide')}
+                        aria-label={t('player_hide')}
+                      >
+                        ↓
+                      </button>
+
+                      <button
+                        onClick={handleClosePlayer}
+                        className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-xl leading-none', darkButtonClass)}
+                        title={t('player_close')}
+                        aria-label={t('player_close')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
                         {t('runtime_label')}: {activeEpisodeRuntime}
                       </span>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowSpeedControls(prev => !prev)}
-                      className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
-                      title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
-                      aria-label={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                        <path d="M12 4v3" />
-                        <path d="M12 17v3" />
-                        <path d="M4 12h3" />
-                        <path d="M17 12h3" />
-                        <path d="m6.5 6.5 2.1 2.1" />
-                        <path d="m15.4 15.4 2.1 2.1" />
-                        <path d="m17.5 6.5-2.1 2.1" />
-                        <path d="m8.6 15.4-2.1 2.1" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                      <span>{playbackRate.toFixed(1)}x</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setShowSpeedControls(prev => !prev)}
+                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                        title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                        aria-label={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M12 4v3" />
+                          <path d="M12 17v3" />
+                          <path d="M4 12h3" />
+                          <path d="M17 12h3" />
+                          <path d="m6.5 6.5 2.1 2.1" />
+                          <path d="m15.4 15.4 2.1 2.1" />
+                          <path d="m17.5 6.5-2.1 2.1" />
+                          <path d="m8.6 15.4-2.1 2.1" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <span>{playbackRate.toFixed(1)}x</span>
+                      </button>
 
-                    <button
-                      onClick={handleAddEpisodeBookmark}
-                      className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
-                      title={t('add_bookmark_btn')}
-                      aria-label={t('add_bookmark_btn')}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                        <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
-                      </svg>
-                      <span>{t('add_bookmark_btn')}</span>
-                    </button>
-
-                    <button
-                      onClick={() => setIsPlayerCollapsed(true)}
-                      className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-lg font-black', darkButtonClass)}
-                      title={t('player_hide')}
-                      aria-label={t('player_hide')}
-                    >
-                      ↓
-                    </button>
-
-                    <button
-                      onClick={handleClosePlayer}
-                      className={classNames('flex h-10 w-10 items-center justify-center rounded-2xl text-xl leading-none', darkButtonClass)}
-                      title={t('player_close')}
-                      aria-label={t('player_close')}
-                    >
-                      ×
-                    </button>
+                      <button
+                        onClick={handleAddEpisodeBookmark}
+                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                        title={t('add_bookmark_btn')}
+                        aria-label={t('add_bookmark_btn')}
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
+                        </svg>
+                        <span>{t('add_bookmark_btn')}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
