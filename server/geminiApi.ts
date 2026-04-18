@@ -21,6 +21,14 @@ PERFORMANCE DIRECTIVES (ULTRA-SMOOTH):
    - If the text is ENGLISH: Use a natural, native English accent. Ensure numbers and dates are read in English (e.g., "123" as "one hundred twenty-three").
    - If the text is SPANISH: Correct pronunciation of 'ñ', 'rr', and accents.
    - For ALL languages: Use the correct phonetics, stress, and intonation for that specific language. DO NOT use a Swedish accent for non-Swedish text.
+   - The input may include pronunciation tags:
+     <sv>...</sv> = pronounce in native Swedish.
+     <en>...</en> = pronounce in natural English.
+     <es>...</es> = pronounce in natural Spanish.
+     <omit>...</omit> = skip completely and do not read aloud.
+   - Never say the tags out loud.
+   - If Swedish is the primary language, keep Swedish pronunciation all the way through and only switch briefly for explicitly tagged English fragments.
+   - Ignore OCR garbage, serial numbers, catalog codes, repeated punctuation noise, and symbol fragments that are not meaningful prose.
 4. NO PREAMBLE: Start reading the text immediately. No introductions like "Here is your text".
 5. STYLE: Warm, clear, and engaging documentary style.
 `;
@@ -41,7 +49,7 @@ type GeminiAction =
   | "generateNotes";
 
 type GeminiRequestBody =
-  | { action: "tts"; text: string; voice: VoiceName; speed?: ReadingSpeed }
+  | { action: "tts"; text: string; voice: VoiceName; speed?: ReadingSpeed; languageHint?: string }
   | { action: "translate"; text: string; targetLanguage: string }
   | { action: "extractImage"; base64Data: string; mimeType: string }
   | { action: "extractPdf"; base64Data: string }
@@ -170,16 +178,25 @@ const parseStructuredNotes = (rawText: string): EpisodeNotes => {
   const bulletLines = lines
     .map(line => line.replace(/^[-*•]\s*/, "").trim())
     .filter(Boolean)
-    .slice(0, 6);
+    .slice(0, 10);
+
+  const highlightBullets = bulletLines.slice(0, 5);
+  const detailBullets = bulletLines.slice(5, 10);
 
   return {
     title: "Anteckningar",
-    summary: lines.slice(0, 2).join(" ").slice(0, 280) || cleaned.slice(0, 280),
+    summary: lines.slice(0, 5).join(" ").slice(0, 640) || cleaned.slice(0, 640),
     sections: [
       {
         heading: "Viktiga punkter",
-        bullets: bulletLines.length > 0 ? bulletLines : [cleaned.slice(0, 180)]
-      }
+        bullets: highlightBullets.length > 0 ? highlightBullets : [cleaned.slice(0, 220)]
+      },
+      ...(detailBullets.length > 0
+        ? [{
+            heading: "Detaljer att minnas",
+            bullets: detailBullets,
+          }]
+        : [])
     ]
   };
 };
@@ -237,7 +254,10 @@ const handleTts = async (body: TtsBody, options?: GeminiHandlerOptions) => {
 
   const ai = getAiClient(options?.apiKey);
   const speed = body.speed ?? ReadingSpeed.Normal;
-  const systemPrompt = `${HIGH_FIDELITY_DIRECTIVE}\n${SPEED_INSTRUCTIONS[speed]}`;
+  const languageHint = isNonEmptyString(body.languageHint)
+    ? `PRIMARY NARRATION LANGUAGE: ${body.languageHint}. Treat this as the main pronunciation anchor unless a tagged fragment explicitly switches language.`
+    : "";
+  const systemPrompt = `${HIGH_FIDELITY_DIRECTIVE}\n${languageHint}\n${SPEED_INSTRUCTIONS[speed]}`;
   const fullPrompt = `${systemPrompt}\n\nTEXT:\n${body.text}`;
 
   const response = await ai.models.generateContent({
@@ -418,10 +438,10 @@ const handleGenerateNotes = async (body: GenerateNotesBody, options?: GeminiHand
 Format:
 {
   "title": "kort rubrik",
-  "summary": "3-5 meningar som sammanfattar det viktigaste i texten",
+  "summary": "5-8 meningar som hjälper en elev att snabbt minnas föreläsningen senare",
   "sections": [
     {
-      "heading": "Viktigaste punkterna",
+      "heading": "tydlig studierubrik",
       "bullets": ["punkt 1", "punkt 2", "punkt 3"]
     }
   ]
@@ -429,14 +449,16 @@ Format:
 
 Regler:
 - Skriv på samma språk som texten.
-- Fokusera på att skapa en kort, tydlig sammanfattning av texten, inte lösa anteckningar.
-- Sammanfattningen ska lyfta fram huvudidéer, slutsatser och det viktigaste innehållet först.
-- Skapa exakt 1 sektion.
-- Sektionen ska innehålla 3 till 5 bullets med de viktigaste punkterna, inga detaljer som inte är centrala.
+- Skriv som välstrukturerade studieanteckningar för en elev som ska repetera en föreläsning i efterhand.
+- Sammanfattningen ska lyfta fram huvudidéer, slutsatser, samband och varför de är viktiga.
+- Skapa 2 till 4 sektioner beroende på materialets bredd.
+- Varje sektion ska innehålla 3 till 5 bullets.
+- Minst en sektion ska fånga viktiga detaljer, definitioner, exempel eller resonemang som hjälper vid repetition.
 - Varje bullet ska vara en hel mening eller en tydlig fras utan asterisker i texten.
 - Skriv tydliga, konkreta rubriker som passar innehållet.
 - Undvik generiska rubriker som "Sektion 1", "Del 1" eller "Punktlista".
-- Sammanfattningen ska kännas välskriven och lätt att skumma.
+- Sammanfattningen ska kännas välskriven, informationsrik och lätt att skumma.
+- Ta med centrala begrepp, viktiga skillnader, orsak-verkan, steg eller exempel när texten innehåller sådant.
 - Returnera bara JSON.
 
 TEXT:

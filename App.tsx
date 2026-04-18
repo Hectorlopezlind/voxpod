@@ -31,7 +31,7 @@ import {
   setMediaSessionPlaybackState,
   unlockAudioPlayback
 } from './services/audioService';
-import heroPreviewImage from './supabase/images/kvinna.webp';
+import heroPreviewImage from './supabase/images/man.webp';
 
 const PREMIUM_VOICES = [
   { name: VoiceName.Kore, label: 'Klara' },
@@ -43,55 +43,62 @@ const PREMIUM_VOICES = [
 
 const LANGUAGES = [
   // Prioriterade språk absolut överst
-  { code: 'English', label: 'English' },
-  { code: 'Spanish', label: 'Spanish' },
-  { code: 'Swedish', label: 'Swedish' },
+  { code: 'English', labels: { en: 'English', es: 'Inglés' } },
+  { code: 'Spanish', labels: { en: 'Spanish', es: 'Español' } },
+  { code: 'Swedish', labels: { en: 'Swedish', es: 'Sueco' } },
   // Europeiska språk (A-Ö)
-  { code: 'Bulgarian', label: 'Bulgarian' },
-  { code: 'Danish', label: 'Danish' },
-  { code: 'Finnish', label: 'Finnish' },
-  { code: 'French', label: 'French' },
-  { code: 'Greek', label: 'Greek' },
-  { code: 'Icelandic', label: 'Icelandic' },
-  { code: 'Italian', label: 'Italian' },
-  { code: 'Dutch', label: 'Dutch' },
-  { code: 'Norwegian', label: 'Norwegian' },
-  { code: 'Polish', label: 'Polish' },
-  { code: 'Portuguese', label: 'Portuguese' },
-  { code: 'Romanian', label: 'Romanian' },
-  { code: 'Russian', label: 'Russian' },
-  { code: 'Slovak', label: 'Slovak' },
-  { code: 'Czech', label: 'Czech' },
-  { code: 'Turkish', label: 'Turkish' },
-  { code: 'German', label: 'German' },
-  { code: 'Ukrainian', label: 'Ukrainian' },
-  { code: 'Hungarian', label: 'Hungarian' },
+  { code: 'Bulgarian', labels: { en: 'Bulgarian', es: 'Búlgaro' } },
+  { code: 'Danish', labels: { en: 'Danish', es: 'Danés' } },
+  { code: 'Finnish', labels: { en: 'Finnish', es: 'Finés' } },
+  { code: 'French', labels: { en: 'French', es: 'Francés' } },
+  { code: 'Greek', labels: { en: 'Greek', es: 'Griego' } },
+  { code: 'Icelandic', labels: { en: 'Icelandic', es: 'Islandés' } },
+  { code: 'Italian', labels: { en: 'Italian', es: 'Italiano' } },
+  { code: 'Dutch', labels: { en: 'Dutch', es: 'Neerlandés' } },
+  { code: 'Norwegian', labels: { en: 'Norwegian', es: 'Noruego' } },
+  { code: 'Polish', labels: { en: 'Polish', es: 'Polaco' } },
+  { code: 'Portuguese', labels: { en: 'Portuguese', es: 'Portugués' } },
+  { code: 'Romanian', labels: { en: 'Romanian', es: 'Rumano' } },
+  { code: 'Russian', labels: { en: 'Russian', es: 'Ruso' } },
+  { code: 'Slovak', labels: { en: 'Slovak', es: 'Eslovaco' } },
+  { code: 'Czech', labels: { en: 'Czech', es: 'Checo' } },
+  { code: 'Turkish', labels: { en: 'Turkish', es: 'Turco' } },
+  { code: 'German', labels: { en: 'German', es: 'Alemán' } },
+  { code: 'Ukrainian', labels: { en: 'Ukrainian', es: 'Ucraniano' } },
+  { code: 'Hungarian', labels: { en: 'Hungarian', es: 'Húngaro' } },
   // Globala språk (A-Ö)
-  { code: 'Arabic', label: 'Arabic' },
-  { code: 'Hindi', label: 'Hindi' },
-  { code: 'Indonesian', label: 'Indonesian' },
-  { code: 'Japanese', label: 'Japanese' },
-  { code: 'Chinese', label: 'Chinese' },
-  { code: 'Korean', label: 'Korean' },
-  { code: 'Thai', label: 'Thai' },
-  { code: 'Vietnamese', label: 'Vietnamese' }
+  { code: 'Arabic', labels: { en: 'Arabic', es: 'Árabe' } },
+  { code: 'Hindi', labels: { en: 'Hindi', es: 'Hindi' } },
+  { code: 'Indonesian', labels: { en: 'Indonesian', es: 'Indonesio' } },
+  { code: 'Japanese', labels: { en: 'Japanese', es: 'Japonés' } },
+  { code: 'Chinese', labels: { en: 'Chinese', es: 'Chino' } },
+  { code: 'Korean', labels: { en: 'Korean', es: 'Coreano' } },
+  { code: 'Thai', labels: { en: 'Thai', es: 'Tailandés' } },
+  { code: 'Vietnamese', labels: { en: 'Vietnamese', es: 'Vietnamita' } }
 ];
 
 const EN_TRANSLATIONS = {
   app_subtitle: 'AI Podcast Streamer',
   docs_btn: 'Upload document',
+  docs_btn_hint: 'PDF, text or rich document',
   camera_btn: 'Use camera',
+  camera_btn_hint: 'Scan one page right now',
   images_btn: 'Upload images',
+  images_btn_hint: 'Import a full image set',
   scanning_pdf: 'Reading PDF...',
+  scanning_camera: 'Reading camera scan...',
   scanning_images: 'Reading images...',
   translating: 'Translating...',
   placeholder_text: 'Paste text, clean up an import, or write your own draft...',
   placeholder_notes: '',
   clear_btn: 'Clear',
+  clear_btn_title: 'Clear the imported text and draft',
   translate_btn: 'Translate',
+  translate_btn_hint: 'Rewrite the current text in another language',
   voice_label: 'Voice',
   speed_label: 'Speed',
   generate_btn: 'Create podcast',
+  generate_btn_hint: 'Turn the current text into spoken audio',
   creating_podcast: 'Creating podcast',
   loading_text: 'Loading text',
   translating_short: 'Translating',
@@ -128,6 +135,11 @@ const EN_TRANSLATIONS = {
   speed_toggle_hide: 'Hide speed',
   player_hide: 'Hide player',
   player_show: 'Show player',
+  player_close: 'Close player',
+  play_btn: 'Play',
+  pause_btn: 'Pause',
+  skip_back_btn: 'Jump back 15 seconds',
+  skip_forward_btn: 'Jump ahead 30 seconds',
   categories_title: 'Categories',
   category_placeholder: 'politics, novels, history',
   category_hint: 'Separate categories with commas.',
@@ -180,6 +192,38 @@ const EN_TRANSLATIONS = {
   summary_body_label: 'Summary text',
   now_playing_label: 'Now playing',
   runtime_label: 'Runtime',
+  language_toggle_to_english: 'Switch to English',
+  language_toggle_to_spanish: 'Cambiar a español',
+  download_mp3_title: 'Download MP3',
+  download_mp3_error: 'MP3 download failed.',
+  playback_position_label: 'Playback position',
+  new_episode_title: 'New episode',
+  image_import_failed: 'Image import failed.',
+  image_import_partial_single: 'One image could not be imported: {name}. The rest of the batch was kept.',
+  image_import_partial_multiple: '{count} images could not be imported. The rest of the batch was kept.',
+  document_import_failed: 'Document import failed.',
+  document_import_partial_single: 'One document could not be imported: {name}. The rest of the batch was kept.',
+  document_import_partial_multiple: '{count} documents could not be imported. The rest of the batch was kept.',
+  translation_failed: 'Translation failed.',
+  playback_failed: 'Playback failed.',
+  delete_failed: 'Could not delete the episode.',
+  speech_cleanup_label: 'Skip OCR codes & lone numbers',
+  speech_cleanup_hint: 'Cleans noisy OCR fragments before speech and keeps English titles natural inside Swedish text.',
+  speech_cleanup_tooltip_on: 'Skip OCR codes, lone numbers, and symbol noise during speech.',
+  speech_cleanup_tooltip_off: 'Read imported OCR text exactly as it appears, including codes and lone numbers.',
+  speech_cleanup_empty_error: 'Nothing readable remained after speech cleanup. Turn it off or edit the text first.',
+  open_episode_title: 'Open episode',
+  delete_episode_title: 'Delete episode',
+  camera_modal_title: 'Camera capture',
+  camera_modal_body: 'Take several photos first, then import them together.',
+  camera_permission_error: 'Camera access failed. Allow camera access or use the native camera picker.',
+  camera_open_native_btn: 'Use native camera',
+  camera_capture_btn: 'Take photo',
+  camera_use_photos_btn: 'Use {count} photos',
+  camera_remove_photo_btn: 'Remove photo',
+  camera_shots_empty: 'No photos yet.',
+  camera_starting: 'Starting camera...',
+  camera_count_status: '{count} photos ready',
   layout_studio_title: 'Layout Studio',
   layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
   layout_studio_current: 'Current layout',
@@ -188,121 +232,167 @@ const EN_TRANSLATIONS = {
   layout_dock_label: 'Layout'
 } as const;
 
-type SupportedLanguage = 'en' | 'sv';
+const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
+  app_subtitle: 'Reproductor de podcasts con IA',
+  docs_btn: 'Subir documento',
+  docs_btn_hint: 'PDF, texto o documento enriquecido',
+  camera_btn: 'Usar cámara',
+  camera_btn_hint: 'Escanea una sola página ahora',
+  images_btn: 'Subir imágenes',
+  images_btn_hint: 'Importa una serie completa de imágenes',
+  scanning_pdf: 'Leyendo PDF...',
+  scanning_camera: 'Leyendo captura...',
+  scanning_images: 'Leyendo imágenes...',
+  translating: 'Traduciendo...',
+  placeholder_text: 'Pega texto, corrige una importación o escribe tu propio borrador...',
+  placeholder_notes: '',
+  clear_btn: 'Borrar',
+  clear_btn_title: 'Borra el texto importado y el borrador',
+  translate_btn: 'Traducir',
+  translate_btn_hint: 'Reescribe el texto actual en otro idioma',
+  voice_label: 'Voz',
+  speed_label: 'Velocidad',
+  generate_btn: 'Crear podcast',
+  generate_btn_hint: 'Convierte el texto actual en audio hablado',
+  creating_podcast: 'Creando podcast',
+  loading_text: 'Cargando texto',
+  translating_short: 'Traduciendo',
+  progress_label: 'Progreso',
+  time_left: 'restante',
+  library_title: 'Biblioteca',
+  empty_library: 'Biblioteca vacía',
+  ai_voice_mode: 'MODO DE VOZ IA',
+  part_label: 'PARTE',
+  of_label: 'DE',
+  notes_title: 'Resumen',
+  no_notes: 'Todavía no hay un resumen disponible.',
+  close_btn: 'Cerrar',
+  cancel_btn: 'Cancelar',
+  sec_left: 's restantes',
+  scanning_progress: 'Importando texto',
+  est_time: 'est.',
+  countdown_label: 'CUENTA ATRÁS',
+  almost_done: 'Casi listo',
+  target_label: 'Destino',
+  files_label: 'archivos',
+  step_label: 'Paso',
+  image_order_title: 'Orden de imágenes',
+  image_order_hint: 'La app lee las imágenes en este orden.',
+  retrying: 'Reintentando automáticamente',
+  waiting_for_network: 'Esperando conexión',
+  listen_summary_btn: 'Escuchar resumen',
+  pause_summary_btn: 'Pausar resumen',
+  summary_audio_error: 'No se pudo reproducir el resumen.',
+  summary_button_title: 'Reproducir resumen',
+  add_bookmark_btn: 'Añadir marcador',
+  bookmarks_title: 'Marcadores',
+  speed_toggle_show: 'Mostrar velocidad',
+  speed_toggle_hide: 'Ocultar velocidad',
+  player_hide: 'Ocultar reproductor',
+  player_show: 'Mostrar reproductor',
+  player_close: 'Cerrar reproductor',
+  play_btn: 'Reproducir',
+  pause_btn: 'Pausar',
+  skip_back_btn: 'Retroceder 15 segundos',
+  skip_forward_btn: 'Avanzar 30 segundos',
+  categories_title: 'Categorías',
+  category_placeholder: 'política, novelas, historia',
+  category_hint: 'Separa las categorías con comas.',
+  save_categories_btn: 'Guardar categorías',
+  edit_categories_btn: 'Categorías',
+  all_categories: 'Todas',
+  sort_label: 'Ordenar por',
+  sort_newest: 'Más recientes',
+  sort_oldest: 'Más antiguos',
+  sort_title: 'Título',
+  uncategorized_label: 'Sin categoría',
+  empty_category_filter: 'Todavía no hay audio en esta categoría.',
+  auth_title: 'Cuenta',
+  auth_subtitle_signed_out: 'Desbloquea la sincronización privada y lleva tu biblioteca a cualquier dispositivo donde inicies sesión.',
+  auth_subtitle_signed_in: 'Tus herramientas premium y la sincronización privada están activas en esta cuenta.',
+  auth_open_btn: 'Abrir cuenta',
+  auth_status_signed_in_short: 'Conectado',
+  auth_email_label: 'Correo',
+  auth_password_label: 'Contraseña',
+  auth_sign_in_tab: 'Iniciar sesión',
+  auth_sign_up_tab: 'Crear cuenta',
+  auth_sign_in_btn: 'Iniciar sesión',
+  auth_sign_up_btn: 'Crear cuenta',
+  auth_sign_out_btn: 'Cerrar sesión',
+  auth_signed_in_as: 'Conectado como',
+  auth_success_signed_in: 'Sesión iniciada.',
+  auth_success_signed_out: 'Sesión cerrada.',
+  auth_check_email: 'Cuenta creada. Revisa tu correo para verificarla antes de iniciar sesión si la verificación está activada.',
+  auth_email_confirmed: 'Cuenta creada e inicio de sesión completado.',
+  auth_loading: 'Conectando...',
+  cloud_status_ready: 'La sincronización privada en la nube está activa para esta cuenta.',
+  cloud_status_syncing: 'Sincronizando tu biblioteca de audio privada...',
+  cloud_status_signed_out: 'Inicia sesión para guardar audio de forma privada y abrirlo en cualquier dispositivo con tu sesión.',
+  cloud_status_setup_needed: 'Ejecuta la configuración SQL de Supabase antes de usar la sincronización protegida.',
+  cloud_status_permission_error: 'La sincronización en la nube está bloqueada por permisos o reglas del bucket de Supabase.',
+  hero_kicker: 'Espacio privado de audio con IA',
+  hero_title: 'Convierte documentos, imágenes y notas en una biblioteca que te acompaña entre dispositivos.',
+  hero_body: 'Crea podcasts desde texto, PDFs, capturas de cámara y lotes de imágenes. Cuando inicias sesión, la biblioteca puede vincularse a tu cuenta de Supabase en lugar de quedarse solo en este navegador.',
+  hero_feature_kicker: 'VOXPOD PREMIUM',
+  hero_feature_title: 'Inicia sesión para funciones premium.',
+  hero_preview_label: 'Destacado',
+  hero_preview_title: 'Convierte texto capturado en una sesión pulida para escuchar.',
+  hero_preview_body: 'Importa un documento, una foto o una serie completa de imágenes y da forma al resultado antes de pulsar reproducir.',
+  hero_action_hint: '',
+  imported_text_label: 'Editor de texto',
+  import_status_ready: 'Listo para editar',
+  edit_summary_btn: 'Editar resumen',
+  save_summary_btn: 'Guardar resumen',
+  summary_title_label: 'Título del resumen',
+  summary_body_label: 'Texto del resumen',
+  now_playing_label: 'Sonando ahora',
+  runtime_label: 'Duración',
+  language_toggle_to_english: 'Switch to English',
+  language_toggle_to_spanish: 'Cambiar a español',
+  download_mp3_title: 'Descargar MP3',
+  download_mp3_error: 'No se pudo descargar el MP3.',
+  playback_position_label: 'Posición de reproducción',
+  new_episode_title: 'Nuevo episodio',
+  image_import_failed: 'La importación de imágenes falló.',
+  image_import_partial_single: 'No se pudo importar una imagen: {name}. El resto del lote se conservó.',
+  image_import_partial_multiple: 'No se pudieron importar {count} imágenes. El resto del lote se conservó.',
+  document_import_failed: 'La importación del documento falló.',
+  document_import_partial_single: 'No se pudo importar un documento: {name}. El resto del lote se conservó.',
+  document_import_partial_multiple: 'No se pudieron importar {count} documentos. El resto del lote se conservó.',
+  translation_failed: 'La traducción falló.',
+  playback_failed: 'La reproducción falló.',
+  delete_failed: 'No se pudo borrar el episodio.',
+  speech_cleanup_label: 'Saltar códigos OCR y números sueltos',
+  speech_cleanup_hint: 'Limpia fragmentos OCR ruidosos antes de leer y mantiene naturales los títulos en inglés dentro de texto sueco.',
+  speech_cleanup_tooltip_on: 'Omite códigos OCR, números sueltos y ruido de símbolos durante la lectura.',
+  speech_cleanup_tooltip_off: 'Lee el texto OCR importado exactamente como aparece, incluidos códigos y números sueltos.',
+  speech_cleanup_empty_error: 'No quedó texto legible después de limpiar la voz. Desactiva el filtro o edita el texto primero.',
+  open_episode_title: 'Abrir episodio',
+  delete_episode_title: 'Borrar episodio',
+  camera_modal_title: 'Captura con cámara',
+  camera_modal_body: 'Haz varias fotos primero y luego impórtalas juntas.',
+  camera_permission_error: 'No se pudo acceder a la cámara. Permite el acceso o usa el selector nativo.',
+  camera_open_native_btn: 'Usar cámara nativa',
+  camera_capture_btn: 'Tomar foto',
+  camera_use_photos_btn: 'Usar {count} fotos',
+  camera_remove_photo_btn: 'Quitar foto',
+  camera_shots_empty: 'Todavía no hay fotos.',
+  camera_starting: 'Iniciando cámara...',
+  camera_count_status: '{count} fotos listas',
+  layout_studio_title: 'Estudio de diseño',
+  layout_studio_body: 'Compara cuatro presentaciones. La versión activa se guarda en este dispositivo.',
+  layout_studio_current: 'Diseño actual',
+  layout_studio_apply: 'Aplicar',
+  layout_studio_selected: 'Seleccionado',
+  layout_dock_label: 'Diseño'
+};
+
+type SupportedLanguage = 'en' | 'es';
 type TranslationKey = keyof typeof EN_TRANSLATIONS;
 
 const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = {
   en: EN_TRANSLATIONS,
-  sv: {
-    app_subtitle: 'AI Podcast Streamer',
-    docs_btn: 'Upload document',
-    camera_btn: 'Use camera',
-    images_btn: 'Upload images',
-    scanning_pdf: 'Reading PDF...',
-    scanning_images: 'Reading images...',
-    translating: 'Translating...',
-    placeholder_text: 'Paste text, clean up an import, or write your own draft...',
-    placeholder_notes: '',
-    clear_btn: 'Clear',
-    translate_btn: 'Translate',
-    voice_label: 'Voice',
-    speed_label: 'Speed',
-    generate_btn: 'Create podcast',
-    creating_podcast: 'Creating podcast',
-    loading_text: 'Loading text',
-    translating_short: 'Translating',
-    progress_label: 'Progress',
-    time_left: 'left',
-    library_title: 'Library',
-    empty_library: 'Empty Library',
-    ai_voice_mode: 'AI VOICE MODE',
-    part_label: 'PART',
-    of_label: 'OF',
-    notes_title: 'Summary',
-    no_notes: 'No summary available yet.',
-    close_btn: 'Close',
-    cancel_btn: 'Cancel',
-    sec_left: 'sec left',
-    scanning_progress: 'Importing text',
-    est_time: 'est.',
-    countdown_label: 'NEDRÄKNING',
-    almost_done: 'Almost done',
-    target_label: 'Target',
-    files_label: 'files',
-    step_label: 'Step',
-    image_order_title: 'Image order',
-    image_order_hint: 'The app reads images in this order.',
-    retrying: 'Retrying automatically',
-    waiting_for_network: 'Waiting for network',
-    listen_summary_btn: 'Listen to summary',
-    pause_summary_btn: 'Pause summary',
-    summary_audio_error: 'Could not play the summary.',
-    summary_button_title: 'Play summary',
-    add_bookmark_btn: 'Add bookmark',
-    bookmarks_title: 'Bookmarks',
-    speed_toggle_show: 'Show speed',
-    speed_toggle_hide: 'Hide speed',
-    player_hide: 'Hide player',
-    player_show: 'Show player',
-    categories_title: 'Categories',
-    category_placeholder: 'politics, novels, history',
-    category_hint: 'Separate categories with commas.',
-    save_categories_btn: 'Save categories',
-    edit_categories_btn: 'Categories',
-    all_categories: 'All',
-    sort_label: 'Sort by',
-    sort_newest: 'Newest',
-    sort_oldest: 'Oldest',
-    sort_title: 'Title',
-    uncategorized_label: 'Uncategorized',
-    empty_category_filter: 'No audio in this category yet.',
-    auth_title: 'Account',
-    auth_subtitle_signed_out: 'Unlock private sync and keep your library with you across signed-in devices.',
-    auth_subtitle_signed_in: 'Your premium tools and private sync are active on this account.',
-    auth_open_btn: 'Open account',
-    auth_status_signed_in_short: 'Signed in',
-    auth_email_label: 'Email',
-    auth_password_label: 'Password',
-    auth_sign_in_tab: 'Sign in',
-    auth_sign_up_tab: 'Create account',
-    auth_sign_in_btn: 'Sign in',
-    auth_sign_up_btn: 'Create account',
-    auth_sign_out_btn: 'Sign out',
-    auth_signed_in_as: 'Signed in as',
-    auth_success_signed_in: 'Signed in.',
-    auth_success_signed_out: 'Signed out.',
-    auth_check_email: 'Account created. Check your email to verify it before signing in if verification is enabled.',
-    auth_email_confirmed: 'Account created and signed in.',
-    auth_loading: 'Connecting...',
-    cloud_status_ready: 'Private cloud sync is active for this account.',
-    cloud_status_syncing: 'Syncing your private audio library...',
-    cloud_status_signed_out: 'Sign in to save audio privately and open it on any signed-in device.',
-    cloud_status_setup_needed: 'Run the Supabase SQL setup before cloud sync can protect your files.',
-    cloud_status_permission_error: 'Cloud sync is blocked by missing Supabase permissions or bucket rules.',
-    hero_kicker: 'Private AI Audio Workspace',
-    hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
-    hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
-    hero_feature_kicker: 'VOXPOD PREMIUM',
-    hero_feature_title: 'Sign in for premium features.',
-    hero_preview_label: 'Featured',
-    hero_preview_title: 'Turn captured text into a polished listening session.',
-    hero_preview_body: 'Import a document, a photo or a full image set, then shape the result before you press play.',
-    hero_action_hint: '',
-    imported_text_label: 'Text editor',
-    import_status_ready: 'Ready to edit',
-    edit_summary_btn: 'Edit summary',
-    save_summary_btn: 'Save summary',
-    summary_title_label: 'Summary title',
-    summary_body_label: 'Summary text',
-    now_playing_label: 'Now playing',
-    runtime_label: 'Runtime',
-    layout_studio_title: 'Layout Studio',
-    layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
-    layout_studio_current: 'Current layout',
-    layout_studio_apply: 'Apply',
-    layout_studio_selected: 'Selected',
-    layout_dock_label: 'Layout'
-  }
+  es: ES_TRANSLATIONS
 };
 
 type ScanSession = {
@@ -336,6 +426,12 @@ type ImportSessionState = {
   baseText: string;
   text: string;
   isComplete: boolean;
+};
+
+type CameraShot = {
+  id: string;
+  file: File;
+  previewUrl: string;
 };
 
 type LibrarySortMode = 'newest' | 'oldest' | 'title';
@@ -379,8 +475,11 @@ const clamp = (value: number, min: number, max: number) =>
 const classNames = (...values: Array<string | false | null | undefined>) =>
   values.filter(Boolean).join(' ');
 
-const estimateImageScanSeconds = (fileCount: number) =>
-  clamp(fileCount * 6, 8, 50);
+const formatTemplate = (template: string, values: Record<string, string | number>) =>
+  Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template
+  );
 
 const estimatePdfScanSeconds = (fileSizeBytes: number) =>
   clamp(Math.ceil(fileSizeBytes / 350_000) * 4, 10, 40);
@@ -409,8 +508,11 @@ const imageNameCollator = new Intl.Collator(undefined, {
 const INITIAL_PLAYBACK_BUFFER = 2;
 const MAX_CHUNK_CHARACTERS = 1800;
 const MAX_NOTES_SOURCE_CHARACTERS = 12000;
-const MAX_SUMMARY_AUDIO_CHARACTERS = 1200;
-const MAX_SUMMARY_AUDIO_BULLETS = 4;
+const MAX_NOTE_SUMMARY_CHARACTERS = 640;
+const MAX_NOTE_SECTION_BULLETS = 5;
+const MAX_NOTE_SECTIONS = 3;
+const MAX_SUMMARY_AUDIO_CHARACTERS = 1800;
+const MAX_SUMMARY_AUDIO_BULLETS = 6;
 const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
 const LIVE_GENERATION_EARLY_START_CHARACTERS = 900;
 const IMPORT_STREAM_FLUSH_CHARACTERS = 80;
@@ -418,25 +520,33 @@ const IMPORT_TEXT_CACHE_VERSION = 1;
 const LEGACY_LIBRARY_STORAGE_KEY = 'voxpod_library';
 const GUEST_LIBRARY_STORAGE_KEY = 'voxpod_library_guest';
 const USER_LIBRARY_STORAGE_KEY_PREFIX = 'voxpod_library_user:';
+const USER_LANGUAGE_STORAGE_KEY = 'voxpod_ui_language';
+const SPEECH_CLEANUP_STORAGE_KEY = 'voxpod_speech_cleanup';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
 const LIBRARY_PERSIST_DELAY_MS = 180;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
+const CHUNK_POLL_INTERVAL_MS = 180;
+const IMAGE_IMPORT_MAX_DIMENSION = 1800;
+const IMAGE_IMPORT_COMPRESSED_MIME = 'image/jpeg';
+const IMAGE_IMPORT_COMPRESSED_QUALITY = 0.82;
+const IMAGE_IMPORT_COMPRESS_THRESHOLD_BYTES = 1_100_000;
+const CAMERA_CAPTURE_FILENAME_PREFIX = 'voxpod-camera';
 
 const LAYOUT_PRESET: LayoutPreset = {
-  shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.2),_transparent_30%),radial-gradient(circle_at_bottom,_rgba(34,211,238,0.13),_transparent_36%),linear-gradient(180deg,#071423_0%,#0f223d_48%,#173458_100%)] font-sans text-slate-50 antialiased',
-  headerClassName: 'sticky top-0 z-30 bg-[linear-gradient(180deg,rgba(7,20,35,0.84),rgba(7,20,35,0.52)_62%,transparent)] backdrop-blur-sm',
+  shellClassName: 'min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,_rgba(119,99,190,0.26),_transparent_30%),radial-gradient(circle_at_bottom,_rgba(57,27,166,0.16),_transparent_38%),linear-gradient(180deg,#1f0f5d_0%,#30168c_48%,#4a2fa4_100%)] font-sans text-slate-50 antialiased',
+  headerClassName: 'sticky top-0 z-30 bg-[linear-gradient(180deg,rgba(32,15,93,0.88),rgba(48,22,140,0.58)_62%,transparent)] backdrop-blur-sm',
   headerInnerClassName: 'mx-auto flex w-full max-w-[430px] items-center gap-4 px-4 py-2 md:max-w-[860px] md:px-5 md:py-2.5 lg:max-w-6xl lg:px-6',
   brandClassName: 'text-slate-50',
-  subtitleClassName: 'text-slate-300',
-  statChipClassName: 'rounded-full border border-[#d7e7fb]/85 bg-[#f4faff]/92 px-4 py-2 text-[11px] font-black text-slate-700 shadow-[0_18px_45px_-30px_rgba(2,6,23,0.3)] backdrop-blur',
+  subtitleClassName: 'text-[#d9d0ef]',
+  statChipClassName: 'rounded-full border border-[#d8d0ed]/88 bg-[#f2f2f2]/92 px-4 py-2 text-[11px] font-black text-[#4d3d93] shadow-[0_18px_45px_-30px_rgba(32,15,93,0.34)] backdrop-blur',
   mainClassName: 'mx-auto grid w-full max-w-[430px] gap-3 px-4 pb-6 md:max-w-[860px] md:grid-cols-[minmax(0,1fr)_280px] md:gap-4 md:px-5 lg:max-w-6xl lg:grid-cols-[minmax(0,1.12fr)_380px] lg:gap-5 lg:px-6 xl:grid-cols-[minmax(0,1.16fr)_420px]',
   heroClassName: 'relative overflow-hidden rounded-[2.2rem] bg-transparent text-zinc-950 md:col-span-2',
-  heroGlowClassName: 'absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_42%)]',
+  heroGlowClassName: 'absolute inset-0 z-[1] bg-[radial-gradient(circle_at_top_right,rgba(242,242,242,0.16),transparent_28%),linear-gradient(180deg,rgba(119,99,190,0.08),transparent_42%)]',
   heroGridClassName: 'relative flex min-h-[230px] items-end p-4 sm:min-h-[270px] sm:p-5 md:min-h-[310px] md:p-6 lg:min-h-[340px]',
-  heroMetricCardClassName: 'rounded-[1.65rem] border border-[#d7e7fb]/85 bg-[#eef7ff]/90 p-4 backdrop-blur',
-  panelClassName: 'rounded-[2rem] border border-[#d4e3f7]/90 bg-[linear-gradient(180deg,rgba(248,252,255,0.98),rgba(231,241,252,0.95))] shadow-[0_24px_64px_-42px_rgba(2,6,23,0.42)] backdrop-blur-xl',
-  playerShellClassName: 'fixed bottom-0 left-0 right-0 z-40 flex flex-col gap-4 rounded-t-[3.2rem] border-t border-[#d4e3f7]/90 bg-[linear-gradient(180deg,rgba(246,251,255,0.98),rgba(231,241,252,0.97))] p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-[0_-22px_54px_-22px_rgba(2,6,23,0.42)] backdrop-blur-2xl animate-in slide-in-from-bottom-full duration-700 ease-out md:bottom-4 md:left-1/2 md:right-auto md:w-[min(860px,calc(100vw-1.5rem))] md:-translate-x-1/2 md:rounded-[2.4rem] md:border lg:bottom-5 lg:w-[min(1180px,calc(100vw-2rem))] lg:rounded-[2.6rem]',
+  heroMetricCardClassName: 'rounded-[1.65rem] border border-[#d8d0ed]/88 bg-[rgba(242,242,242,0.16)] p-4 backdrop-blur',
+  panelClassName: 'rounded-[2rem] border border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.96))] shadow-[0_24px_64px_-42px_rgba(32,15,93,0.42)] backdrop-blur-xl',
+  playerShellClassName: 'fixed bottom-0 left-0 right-0 z-40 flex flex-col gap-4 rounded-t-[3.2rem] border-t border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.97))] p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-[0_-22px_54px_-22px_rgba(32,15,93,0.42)] backdrop-blur-2xl animate-in slide-in-from-bottom-full duration-700 ease-out md:bottom-4 md:left-1/2 md:right-auto md:w-[min(860px,calc(100vw-1.5rem))] md:-translate-x-1/2 md:rounded-[2.4rem] md:border lg:bottom-5 lg:w-[min(1180px,calc(100vw-2rem))] lg:rounded-[2.6rem]',
 };
 
 const getScopedLibraryStorageKey = (userId?: string | null) =>
@@ -504,6 +614,21 @@ const sleep = (ms: number) =>
 
 const waitForNextPaint = () =>
   new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+
+const waitForBrowserOnline = async () => {
+  if (typeof navigator === 'undefined' || navigator.onLine) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const handleOnline = () => {
+      window.removeEventListener('online', handleOnline);
+      resolve();
+    };
+
+    window.addEventListener('online', handleOnline, { once: true });
+  });
+};
 
 const formatStopwatch = (seconds: number) => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -595,10 +720,98 @@ const readFileAsBase64 = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the file.'));
+    reader.readAsDataURL(file);
+  });
+
+const loadImageElement = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not decode the image.'));
+    image.src = src;
+  });
+
+const scaleDimensionsToFit = (width: number, height: number, maxDimension: number) => {
+  if (width <= maxDimension && height <= maxDimension) {
+    return { width, height };
+  }
+
+  const ratio = Math.min(maxDimension / width, maxDimension / height);
+  return {
+    width: Math.max(1, Math.round(width * ratio)),
+    height: Math.max(1, Math.round(height * ratio)),
+  };
+};
+
+const canvasToBlob = (
+  canvas: HTMLCanvasElement,
+  mimeType: string,
+  quality?: number
+) =>
+  new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+
+      reject(new Error('Could not encode the image.'));
+    }, mimeType, quality);
+  });
+
+const optimizeImageForImport = async (file: File) => {
+  const shouldCompress = file.size >= IMAGE_IMPORT_COMPRESS_THRESHOLD_BYTES || file.type === 'image/heic' || file.type === 'image/heif';
+  if (!shouldCompress && file.type === IMAGE_IMPORT_COMPRESSED_MIME) {
+    return file;
+  }
+
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageElement(dataUrl);
+    const { width, height } = scaleDimensionsToFit(image.naturalWidth, image.naturalHeight, IMAGE_IMPORT_MAX_DIMENSION);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return file;
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, IMAGE_IMPORT_COMPRESSED_MIME, IMAGE_IMPORT_COMPRESSED_QUALITY);
+
+    if (!shouldCompress && blob.size >= file.size) {
+      return file;
+    }
+
+    const nextName = file.name.replace(/\.[^.]+$/, '.jpg');
+    return new File([blob], nextName || `${file.name}.jpg`, {
+      type: IMAGE_IMPORT_COMPRESSED_MIME,
+      lastModified: file.lastModified || Date.now(),
+    });
+  } catch (error) {
+    console.warn('Could not optimize image before OCR, falling back to original file.', error);
+    return file;
+  }
+};
+
+const estimateSingleImageScanSeconds = (sizeBytes: number) =>
+  clamp(Math.ceil(sizeBytes / 550_000) * 3, 3, 18);
+
 const estimateDocumentScanSeconds = (file: File) =>
   isTextDocumentFile(file)
     ? clamp(Math.ceil(file.size / 250_000), 2, 8)
     : estimatePdfScanSeconds(file.size);
+
+const estimateImageBatchScanSeconds = (files: File[]) =>
+  clamp(files.reduce((total, file) => total + estimateSingleImageScanSeconds(file.size), 0), 4, 180);
 
 const estimateDocumentBatchScanSeconds = (files: File[]) =>
   clamp(files.reduce((total, file) => total + estimateDocumentScanSeconds(file), 0), 2, 180);
@@ -631,6 +844,46 @@ const composeImportedText = (baseText: string, importedText: string) => {
 const splitParagraphIntoSentences = (paragraph: string) =>
   paragraph.match(/[^.!?]+(?:[.!?]+|$)/g)?.map(part => part.trim()).filter(Boolean) ?? [paragraph.trim()];
 
+const splitLongTextPreservingWords = (text: string, maxChars: number) => {
+  const normalized = text.trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxChars) return [normalized];
+
+  const parts: string[] = [];
+  let currentPart = '';
+
+  for (const word of normalized.split(/\s+/)) {
+    if (word.length > maxChars) {
+      if (currentPart) {
+        parts.push(currentPart);
+        currentPart = '';
+      }
+
+      for (let index = 0; index < word.length; index += maxChars) {
+        const slice = word.slice(index, index + maxChars).trim();
+        if (slice) {
+          parts.push(slice);
+        }
+      }
+      continue;
+    }
+
+    const candidate = currentPart ? `${currentPart} ${word}` : word;
+    if (candidate.length > maxChars && currentPart) {
+      parts.push(currentPart);
+      currentPart = word;
+    } else {
+      currentPart = candidate;
+    }
+  }
+
+  if (currentPart) {
+    parts.push(currentPart);
+  }
+
+  return parts;
+};
+
 const NOTES_UI_LABELS = {
   en: {
     title: 'Summary',
@@ -640,13 +893,13 @@ const NOTES_UI_LABELS = {
     keyPoints: 'Key points',
     details: 'Details'
   },
-  sv: {
-    title: 'Anteckningar',
-    summary: 'Sammanfattning',
-    personal: 'Dina anteckningar',
-    highlights: 'Höjdpunkter',
-    keyPoints: 'Nyckelpunkter',
-    details: 'Detaljer'
+  es: {
+    title: 'Resumen',
+    summary: 'Resumen',
+    personal: 'Tus notas',
+    highlights: 'Aspectos clave',
+    keyPoints: 'Puntos clave',
+    details: 'Detalles'
   }
 } as const;
 
@@ -691,6 +944,192 @@ const mergeGeneratedAndPersonalNotes = (
 const normalizeInlineText = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
 
+const SWEDISH_SPEECH_HINT_PATTERN = /[åäö]|\b(och|att|det|som|för|med|inte|är|ska|kan|till|från|har|vara|den|detta|dessa|också|finns|sker|själv|genom)\b/gi;
+const ENGLISH_SPEECH_HINT_PATTERN = /\b(the|and|with|from|into|about|lecture|lesson|title|chapter|summary|overview|research|study|learning|introduction|method|results)\b/gi;
+const SPANISH_SPEECH_HINT_PATTERN = /[ñáéíóúü]|\b(el|la|los|las|que|con|para|como|del|una|uno|esta|este|estos|estas|más|porque)\b/gi;
+const ENGLISH_TITLE_KEYWORDS = new Set([
+  'analysis',
+  'chapter',
+  'computer',
+  'design',
+  'english',
+  'history',
+  'introduction',
+  'lecture',
+  'learning',
+  'machine',
+  'methods',
+  'model',
+  'notes',
+  'overview',
+  'podcast',
+  'research',
+  'results',
+  'science',
+  'society',
+  'summary',
+  'systems',
+  'theory',
+  'vision'
+]);
+
+const countPatternMatches = (value: string, pattern: RegExp) =>
+  value.match(pattern)?.length ?? 0;
+
+const countMatchingCharacters = (value: string, pattern: RegExp) =>
+  value.match(pattern)?.length ?? 0;
+
+const detectPrimarySpeechLanguage = (text: string) => {
+  const sample = text.slice(0, 5000);
+  const swedishScore = countPatternMatches(sample, SWEDISH_SPEECH_HINT_PATTERN) * 2
+    + countMatchingCharacters(sample, /[åäö]/gi) * 3;
+  const englishScore = countPatternMatches(sample, ENGLISH_SPEECH_HINT_PATTERN) * 2;
+  const spanishScore = countPatternMatches(sample, SPANISH_SPEECH_HINT_PATTERN) * 2;
+
+  if (swedishScore >= englishScore + 2 && swedishScore >= spanishScore + 2) {
+    return 'Swedish';
+  }
+
+  if (englishScore >= swedishScore + 2 && englishScore >= spanishScore + 2) {
+    return 'English';
+  }
+
+  if (spanishScore >= swedishScore + 2 && spanishScore >= englishScore + 2) {
+    return 'Spanish';
+  }
+
+  return undefined;
+};
+
+const isLikelyNoiseToken = (token: string) => {
+  const cleanedToken = token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  if (!cleanedToken) {
+    return true;
+  }
+
+  const letters = countMatchingCharacters(cleanedToken, /[\p{L}]/gu);
+  const digits = countMatchingCharacters(cleanedToken, /\d/g);
+  const symbols = Math.max(0, cleanedToken.length - letters - digits);
+
+  if (letters === 0 && digits > 0) {
+    return true;
+  }
+
+  if (digits >= 2 && digits >= letters) {
+    return true;
+  }
+
+  if (letters <= 2 && digits + symbols >= 3) {
+    return true;
+  }
+
+  return cleanedToken.length >= 7 && digits + symbols >= Math.ceil(cleanedToken.length * 0.5);
+};
+
+const isLikelyNoiseLine = (line: string) => {
+  const normalized = normalizeInlineText(line);
+  if (!normalized) return true;
+
+  const letters = countMatchingCharacters(normalized, /[\p{L}]/gu);
+  const digits = countMatchingCharacters(normalized, /\d/g);
+  const symbols = normalized.replace(/[\p{L}\d\s]/gu, '').length;
+
+  if (letters === 0 && digits > 0) {
+    return true;
+  }
+
+  if (letters > 0) {
+    return digits + symbols > letters * 1.5 && letters < 8;
+  }
+
+  return digits + symbols > 0;
+};
+
+const stripNoiseFromSpeechLine = (line: string) => {
+  if (isLikelyNoiseLine(line)) {
+    return '';
+  }
+
+  const filtered = line
+    .split(/\s+/)
+    .filter(token => !isLikelyNoiseToken(token))
+    .join(' ');
+
+  return normalizeInlineText(
+    filtered
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .replace(/([([{])\s+/g, '$1')
+  );
+};
+
+const buildSpeechSourceText = (text: string, stripNoise: boolean) => {
+  const normalizedLines = text
+    .split(/\r?\n/)
+    .map(line => stripNoise ? stripNoiseFromSpeechLine(line) : normalizeInlineText(line));
+
+  const result: string[] = [];
+  normalizedLines.forEach((line) => {
+    if (!line) {
+      if (result.length > 0 && result[result.length - 1] !== '') {
+        result.push('');
+      }
+      return;
+    }
+    result.push(line);
+  });
+
+  return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
+const looksLikeEnglishTitleLine = (line: string) => {
+  const normalized = normalizeInlineText(line);
+  if (!normalized || normalized.length > 90 || /[åäö]/i.test(normalized)) {
+    return false;
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 8) {
+    return false;
+  }
+
+  const englishScore = countPatternMatches(normalized, ENGLISH_SPEECH_HINT_PATTERN);
+  if (englishScore >= 1) {
+    return true;
+  }
+
+  const keywordHits = words.filter(word => ENGLISH_TITLE_KEYWORDS.has(word.toLowerCase())).length;
+  return keywordHits >= 2;
+};
+
+const buildSpeechRequestText = (text: string, stripNoise: boolean) => {
+  const sourceText = buildSpeechSourceText(text, stripNoise);
+  const languageHint = detectPrimarySpeechLanguage(sourceText);
+  const speechText = sourceText
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) {
+        return '';
+      }
+
+      if (languageHint === 'Swedish') {
+        return looksLikeEnglishTitleLine(trimmedLine)
+          ? `<en>${trimmedLine}</en>`
+          : `<sv>${trimmedLine}</sv>`;
+      }
+
+      return trimmedLine;
+    })
+    .join('\n')
+    .trim();
+
+  return {
+    sourceText,
+    speechText,
+    languageHint,
+  };
+};
+
 const truncateText = (value: string, maxLength: number) => {
   const normalized = normalizeInlineText(value);
   if (normalized.length <= maxLength) {
@@ -717,8 +1156,9 @@ const getNotesLabels = (userLang: string) =>
 const SUMMARY_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'att', 'av', 'be', 'blev', 'by', 'de', 'dem', 'den', 'det',
   'detta', 'do', 'där', 'eller', 'en', 'ett', 'for', 'från', 'för', 'had', 'har', 'have', 'hur',
-  'i', 'if', 'in', 'into', 'is', 'it', 'kan', 'med', 'men', 'not', 'och', 'om', 'on', 'or', 'på',
-  'så', 'som', 'that', 'the', 'their', 'them', 'there', 'this', 'till', 'to', 'var', 'vi',
+  'i', 'if', 'in', 'into', 'is', 'it', 'kan', 'med', 'men', 'not', 'och', 'om', 'on', 'or', 'para', 'por', 'på',
+  'que', 'se', 'sin', 'så', 'som', 'su', 'sus', 'that', 'the', 'their', 'them', 'there', 'this', 'till', 'to',
+  'una', 'uno', 'unos', 'unas', 'var', 'vi',
   'was', 'were', 'what', 'which', 'with'
 ]);
 
@@ -769,6 +1209,16 @@ const selectSummarySentences = (text: string, maxSentences: number) => {
     .map(item => item.sentence);
 };
 
+const uniqueNoteBullets = (values: string[], limit: number) =>
+  Array.from(new Set(values.map(finalizeNoteBullet).filter(Boolean))).slice(0, limit);
+
+const sanitizeNoteSectionHeading = (value: string, fallbackHeading: string) => {
+  const heading = truncateText(value, 42) || fallbackHeading;
+  return /^(section|sektion|del|part|punktlista|lista)\b/i.test(heading)
+    ? fallbackHeading
+    : heading;
+};
+
 const buildSummaryFallbackCore = (
   text: string,
   userLang: string,
@@ -781,25 +1231,32 @@ const buildSummaryFallbackCore = (
       .map(line => line.trim())
       .find(Boolean)
     || labels.title;
-  const summarySentences = selectSummarySentences(text, 3);
-  const bulletSentences = selectSummarySentences(text, 4);
-  const summary = truncateText(summarySentences.join(' '), 280)
-    || truncateText(text, 280)
+  const rankedSentences = selectSummarySentences(text, 8);
+  const summarySentences = rankedSentences.slice(0, 5);
+  const highlightBullets = uniqueNoteBullets(rankedSentences.slice(0, 4), MAX_NOTE_SECTION_BULLETS);
+  const detailBullets = uniqueNoteBullets(
+    rankedSentences.slice(4).concat(collectTextSentences(text).slice(0, 4)),
+    MAX_NOTE_SECTION_BULLETS
+  );
+  const summary = truncateText(summarySentences.join(' '), MAX_NOTE_SUMMARY_CHARACTERS)
+    || truncateText(text, MAX_NOTE_SUMMARY_CHARACTERS)
     || labels.summary;
-  const bullets = bulletSentences
-    .map(finalizeNoteBullet)
-    .filter(Boolean)
-    .slice(0, 4);
 
   return {
     title: truncateText(firstLine, 70) || labels.title,
     summary,
     sections: [
       {
-        heading: labels.keyPoints,
-        bullets: bullets.length > 0 ? bullets : [finalizeNoteBullet(summary) || summary]
-      }
-    ]
+        heading: labels.highlights,
+        bullets: highlightBullets.length > 0 ? highlightBullets : [finalizeNoteBullet(summary) || summary]
+      },
+      ...(detailBullets.length > 0
+        ? [{
+            heading: labels.details,
+            bullets: detailBullets,
+          }]
+        : [])
+    ].slice(0, MAX_NOTE_SECTIONS)
   };
 };
 
@@ -830,24 +1287,44 @@ const sanitizeEpisodeNotes = (
   sourceText: string,
   userLang: string
 ): EpisodeNotes => {
-  const labels = getNotesLabels(userLang);
   const fallback = buildSummaryFallbackCore(sourceText, userLang, notes.title);
   const personalSection = extractPersonalNotesSection(notes.sections, userLang);
-  const mainBullets = notes.sections
+  const seenBullets = new Set<string>();
+  const mainSections = notes.sections
     .filter(section => !PERSONAL_NOTES_HEADINGS.has(normalizeInlineText(section.heading).toLowerCase()))
-    .flatMap(section => section.bullets)
-    .map(finalizeNoteBullet)
-    .filter(Boolean);
-  const uniqueBullets = Array.from(new Set(mainBullets)).slice(0, 4);
+    .map((section, index) => {
+      const fallbackHeading = fallback.sections[index]?.heading
+        ?? (index === 0 ? getNotesLabels(userLang).highlights : getNotesLabels(userLang).details);
+      const bullets = section.bullets
+        .map(finalizeNoteBullet)
+        .filter(Boolean)
+        .filter((bullet) => {
+          if (seenBullets.has(bullet)) {
+            return false;
+          }
+
+          seenBullets.add(bullet);
+          return true;
+        })
+        .slice(0, MAX_NOTE_SECTION_BULLETS);
+
+      if (bullets.length === 0) {
+        return null;
+      }
+
+      return {
+        heading: sanitizeNoteSectionHeading(section.heading, fallbackHeading),
+        bullets,
+      };
+    })
+    .filter((section): section is EpisodeNotes['sections'][number] => Boolean(section))
+    .slice(0, MAX_NOTE_SECTIONS);
 
   return {
     title: truncateText(notes.title || fallback.title, 70) || fallback.title,
-    summary: truncateText(notes.summary || fallback.summary, 280) || fallback.summary,
+    summary: truncateText(notes.summary || fallback.summary, MAX_NOTE_SUMMARY_CHARACTERS) || fallback.summary,
     sections: [
-      {
-        heading: labels.keyPoints,
-        bullets: uniqueBullets.length > 0 ? uniqueBullets : fallback.sections[0].bullets
-      },
+      ...(mainSections.length > 0 ? mainSections : fallback.sections),
       ...(personalSection ? [personalSection] : [])
     ]
   };
@@ -949,26 +1426,26 @@ const normalizeAuthErrorMessage = (message: string, userLang: SupportedLanguage)
   const normalized = message.toLowerCase();
 
   if (normalized.includes('invalid login credentials')) {
-    return userLang === 'sv'
-      ? 'Fel e-post eller lösenord.'
+    return userLang === 'es'
+      ? 'Correo o contraseña incorrectos.'
       : 'Incorrect email or password.';
   }
 
   if (normalized.includes('email not confirmed')) {
-    return userLang === 'sv'
-      ? 'Bekräfta din e-postadress innan du loggar in.'
+    return userLang === 'es'
+      ? 'Confirma tu dirección de correo antes de iniciar sesión.'
       : 'Confirm your email address before signing in.';
   }
 
   if (normalized.includes('user already registered')) {
-    return userLang === 'sv'
-      ? 'Det finns redan ett konto med den här e-postadressen.'
+    return userLang === 'es'
+      ? 'Ya existe una cuenta con este correo.'
       : 'An account with this email already exists.';
   }
 
   if (normalized.includes('password should be at least')) {
-    return userLang === 'sv'
-      ? 'Lösenordet måste vara minst 6 tecken.'
+    return userLang === 'es'
+      ? 'La contraseña debe tener al menos 6 caracteres.'
       : 'Password must be at least 6 characters.';
   }
 
@@ -977,19 +1454,19 @@ const normalizeAuthErrorMessage = (message: string, userLang: SupportedLanguage)
 
 const normalizeCloudSyncErrorMessage = (error: unknown, userLang: SupportedLanguage) => {
   if (isMissingCloudSchemaError(error)) {
-    return userLang === 'sv'
-      ? 'Supabase-tabellen och RLS-reglerna saknas. Kör filen supabase/voxpod_cloud_sync.sql i Supabase SQL Editor.'
+    return userLang === 'es'
+      ? 'Faltan la tabla de Supabase y las reglas RLS. Ejecuta el archivo supabase/voxpod_cloud_sync.sql en el editor SQL de Supabase.'
       : 'The Supabase table and RLS rules are missing. Run supabase/voxpod_cloud_sync.sql in the Supabase SQL Editor.';
   }
 
   if (isCloudPermissionError(error)) {
-    return userLang === 'sv'
-      ? 'Supabase blockerar åtkomst. Kontrollera att Audio-bucketen är privat och att RLS-policys från SQL-filen är aktiva.'
+    return userLang === 'es'
+      ? 'Supabase está bloqueando el acceso. Asegúrate de que el bucket Audio sea privado y de que las políticas RLS del archivo SQL estén activas.'
       : 'Supabase is blocking access. Make sure the Audio bucket is private and the SQL file RLS policies are active.';
   }
 
   const message = error instanceof Error ? error.message : String(error ?? '');
-  return message || (userLang === 'sv' ? 'Molnsynken misslyckades.' : 'Cloud sync failed.');
+  return message || (userLang === 'es' ? 'La sincronización en la nube falló.' : 'Cloud sync failed.');
 };
 
 const toSpeechSentence = (value: string) => {
@@ -1046,14 +1523,26 @@ const getRequiredLiveReadyChunks = (
 };
 
 const App: React.FC = () => {
-  const userLang: SupportedLanguage = 'en';
+  const [userLang, setUserLang] = useState<SupportedLanguage>(() => {
+    if (typeof window === 'undefined') {
+      return 'en';
+    }
 
+    return window.localStorage.getItem(USER_LANGUAGE_STORAGE_KEY) === 'es' ? 'es' : 'en';
+  });
   const t = (key: TranslationKey) => TRANSLATIONS[userLang][key];
   const [library, setLibrary] = useState<PodcastEpisode[]>([]);
   const [inputText, setInputText] = useState(() => localStorage.getItem(INPUT_TEXT_STORAGE_KEY) || '');
   const inputNotes = '';
   const [selectedVoice, setSelectedVoice] = useState<string>(PREMIUM_VOICES[0].name);
   const [playbackRate, setRate] = useState(1.0);
+  const [useSpeechCleanup, setUseSpeechCleanup] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    return window.localStorage.getItem(SPEECH_CLEANUP_STORAGE_KEY) !== '0';
+  });
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
@@ -1096,10 +1585,18 @@ const App: React.FC = () => {
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [playerInset, setPlayerInset] = useState(0);
   const [isPlayerCollapsed, setIsPlayerCollapsed] = useState(false);
+  const [showCameraCapture, setShowCameraCapture] = useState(false);
+  const [cameraShots, setCameraShots] = useState<CameraShot[]>([]);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isCameraBooting, setIsCameraBooting] = useState(false);
+  const [isCameraImporting, setIsCameraImporting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraShotsRef = useRef<CameraShot[]>([]);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const voiceMenuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
@@ -1116,6 +1613,11 @@ const App: React.FC = () => {
     isLoading: false,
     isPlaying: false
   });
+  const languageToggleTarget = userLang === 'en' ? 'es' : 'en';
+  const languageToggleFlag = languageToggleTarget === 'es' ? '🇪🇸' : '🇬🇧';
+  const languageToggleLabel = languageToggleTarget === 'es'
+    ? t('language_toggle_to_spanish')
+    : t('language_toggle_to_english');
 
   // Cache for pre-loaded chunks to prevent gaps
   const chunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
@@ -1139,6 +1641,19 @@ const App: React.FC = () => {
     activeEpisode: null,
     currentChunkIndex: 0
   });
+
+  const stopCameraStream = () => {
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    cameraStreamRef.current = null;
+
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+  };
+
+  const revokeCameraShotPreviews = (shots: CameraShot[]) => {
+    shots.forEach((shot) => URL.revokeObjectURL(shot.previewUrl));
+  };
 
   useEffect(() => {
     const shell = playerShellRef.current;
@@ -1325,7 +1840,7 @@ const App: React.FC = () => {
       searchTimeoutRef.current = window.setTimeout(() => setSearchBuffer(''), 1000);
 
       const foundIndex = LANGUAGES.findIndex(l => 
-        l.label.toLowerCase().startsWith(newBuffer)
+        l.labels[userLang].toLowerCase().startsWith(newBuffer)
       );
 
       if (foundIndex !== -1 && langMenuRef.current) {
@@ -1340,8 +1855,96 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    localStorage.setItem(USER_LANGUAGE_STORAGE_KEY, userLang);
+  }, [userLang]);
+
+  useEffect(() => {
+    localStorage.setItem(SPEECH_CLEANUP_STORAGE_KEY, useSpeechCleanup ? '1' : '0');
+  }, [useSpeechCleanup]);
+
+  useEffect(() => {
     localStorage.setItem(INPUT_TEXT_STORAGE_KEY, inputText);
   }, [inputText]);
+
+  useEffect(() => {
+    cameraShotsRef.current = cameraShots;
+  }, [cameraShots]);
+
+  useEffect(() => {
+    if (!showCameraCapture) {
+      stopCameraStream();
+      setIsCameraBooting(false);
+      return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(TRANSLATIONS[userLang].camera_permission_error);
+      setIsCameraBooting(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCameraError(null);
+    setIsCameraBooting(true);
+
+    const startCamera = async () => {
+      try {
+        let stream: MediaStream;
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        cameraStreamRef.current = stream;
+        const video = cameraVideoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          video.muted = true;
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('autoplay', 'true');
+          await video.play().catch(() => undefined);
+        }
+        setIsCameraBooting(false);
+      } catch (error) {
+        console.error('Could not start the camera stream', error);
+        if (!cancelled) {
+          setCameraError(TRANSLATIONS[userLang].camera_permission_error);
+          setIsCameraBooting(false);
+        }
+      }
+    };
+
+    void startCamera();
+
+    return () => {
+      cancelled = true;
+      stopCameraStream();
+    };
+  }, [showCameraCapture, userLang]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+      revokeCameraShotPreviews(cameraShotsRef.current);
+    };
+  }, []);
 
   const isScanning = scanSource !== null;
   const isBusy = isGenerating || isGeneratingNotes || isTranslating;
@@ -1611,13 +2214,8 @@ const App: React.FC = () => {
     const interval = setInterval(() => {
       if (!el.paused) {
         syncTime();
-        if (el.currentTime > 0 && el.duration > 0 && el.currentTime >= el.duration - 0.2) {
-          if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
-            void playChunk(player.activeEpisode, player.currentChunkIndex + 1);
-          }
-        }
       }
-    }, 500);
+    }, 250);
 
     return () => {
       el.removeEventListener('timeupdate', syncTime);
@@ -1798,8 +2396,7 @@ const App: React.FC = () => {
         }
 
         if (sentence.length > MAX_CHUNK_CHARACTERS) {
-          for (let index = 0; index < sentence.length; index += MAX_CHUNK_CHARACTERS) {
-            const part = sentence.slice(index, index + MAX_CHUNK_CHARACTERS).trim();
+          for (const part of splitLongTextPreservingWords(sentence, MAX_CHUNK_CHARACTERS)) {
             if (part) {
               chunks.push(part);
             }
@@ -1816,8 +2413,21 @@ const App: React.FC = () => {
   };
 
   const buildChunkAudio = async (textChunk: string) => {
+    const speechRequest = buildSpeechRequestText(textChunk, false);
+    if (!speechRequest.speechText) {
+      throw new Error(t('speech_cleanup_empty_error'));
+    }
+
     setRetryNotice(null);
-    const base64 = await generateTTS(textChunk, selectedVoice as VoiceName, undefined, makeRetryOptions());
+    const base64 = await generateTTS(
+      speechRequest.speechText,
+      selectedVoice as VoiceName,
+      undefined,
+      {
+        ...makeRetryOptions(),
+        languageHint: speechRequest.languageHint,
+      }
+    );
     setRetryNotice(null);
     const pcmBytes = decodeBase64ToUint8(base64);
 
@@ -1828,10 +2438,12 @@ const App: React.FC = () => {
   };
 
   const getImportChunkWindow = (sourceText: string, isComplete: boolean) => {
-    const allChunks = chunkText(sourceText);
+    const narrationText = buildSpeechSourceText(sourceText, useSpeechCleanup);
+    const allChunks = chunkText(narrationText);
     const finalizedCount = isComplete ? allChunks.length : Math.max(0, allChunks.length - 1);
 
     return {
+      narrationText,
       allChunks,
       finalizedCount,
       projectedChunkCount: Math.max(finalizedCount, allChunks.length),
@@ -1884,8 +2496,19 @@ const App: React.FC = () => {
           break;
         }
 
-        const { allChunks, finalizedCount, projectedChunkCount } = getImportChunkWindow(trimmedText, source.isComplete);
+        const { narrationText, allChunks, finalizedCount, projectedChunkCount } = getImportChunkWindow(trimmedText, source.isComplete);
         const shouldGenerateNotes = trimmedText.length > 0;
+
+        if (!narrationText) {
+          if (source.isComplete) {
+            liveGenerationRef.current = null;
+            setIsGenerating(false);
+            setGenerationSession(null);
+            setError(t('speech_cleanup_empty_error'));
+          }
+          break;
+        }
+
         const requiredInitialReady = getRequiredLiveReadyChunks(allChunks, finalizedCount, source.isComplete);
 
         syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
@@ -1926,7 +2549,7 @@ const App: React.FC = () => {
             readyChunkCount: live.generatedCount,
             generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
             chunkDurations: [...live.generatedDurations],
-            duration: estimateEpisodeDurationSeconds(trimmedText),
+            duration: estimateEpisodeDurationSeconds(narrationText),
             playbackRate: 1,
           };
 
@@ -1947,8 +2570,8 @@ const App: React.FC = () => {
           text: trimmedText,
           chunkCount: Math.max(projectedChunkCount, live.generatedCount),
           duration: source.isComplete
-            ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(trimmedText))
-            : estimateEpisodeDurationSeconds(trimmedText),
+            ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(narrationText))
+            : estimateEpisodeDurationSeconds(narrationText),
         });
 
         if (live.generatedCount < finalizedCount) {
@@ -1966,8 +2589,8 @@ const App: React.FC = () => {
             chunkCount: Math.max(projectedChunkCount, live.generatedCount),
             chunkDurations: [...live.generatedDurations],
             duration: source.isComplete
-              ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(trimmedText))
-              : estimateEpisodeDurationSeconds(trimmedText),
+              ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(narrationText))
+              : estimateEpisodeDurationSeconds(narrationText),
           });
 
           syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
@@ -2042,7 +2665,13 @@ const App: React.FC = () => {
         : '';
       if (isScanning && activeImportSession && activeImportText) {
         const sourceText = activeImportText;
-        const projectedChunks = Math.max(1, getImportChunkWindow(sourceText, activeImportSession.isComplete).projectedChunkCount);
+        const { narrationText, projectedChunkCount } = getImportChunkWindow(sourceText, activeImportSession.isComplete);
+        if (!narrationText) {
+          setError(t('speech_cleanup_empty_error'));
+          setIsGenerating(false);
+          return;
+        }
+        const projectedChunks = Math.max(1, projectedChunkCount);
 
         setGenerationProgress({ current: 0, total: projectedChunks + 1 });
         setGenerationSession({
@@ -2061,7 +2690,7 @@ const App: React.FC = () => {
           generatedDurations: [],
           startedPlayback: false,
           voice: selectedVoice as VoiceName,
-          title: sourceText.split('\n')[0].substring(0, 40) || 'New episode',
+          title: sourceText.split('\n')[0].substring(0, 40) || t('new_episode_title'),
         };
 
         void pumpLiveGeneration();
@@ -2069,15 +2698,19 @@ const App: React.FC = () => {
       }
 
       const id = crypto.randomUUID();
-      const chunks = chunkText(inputText);
-      if (chunks.length === 0) return;
+      const narrationText = buildSpeechSourceText(inputText, useSpeechCleanup);
+      const chunks = chunkText(narrationText);
+      if (chunks.length === 0) {
+        setError(t('speech_cleanup_empty_error'));
+        return;
+      }
 
-      const title = inputText.trim().split('\n')[0].substring(0, 40) || 'New episode';
+      const title = inputText.trim().split('\n')[0].substring(0, 40) || t('new_episode_title');
       const shouldGenerateNotes = inputText.trim().length > 0;
       const notesSourceText = buildNotesSourceText(inputText);
       const fallbackNotes = buildFallbackEpisodeNotes(inputText, inputNotes, userLang);
       const totalSteps = chunks.length + (shouldGenerateNotes ? 1 : 0);
-      const estimatedDuration = estimateEpisodeDurationSeconds(inputText);
+      const estimatedDuration = estimateEpisodeDurationSeconds(narrationText);
       const initialBufferSize = Math.min(INITIAL_PLAYBACK_BUFFER, chunks.length);
       const generatedDurations: number[] = [];
 
@@ -2204,7 +2837,7 @@ const App: React.FC = () => {
       a.download = `${episode.title.replace(/\s+/g, '_')}.mp3`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { setError('MP3 download failed.'); }
+    } catch (err) { setError(t('download_mp3_error')); }
     finally { setIsDownloading(null); }
   };
 
@@ -2258,7 +2891,16 @@ const App: React.FC = () => {
       }
 
       if (!wavBuffer) {
-        const base64 = await generateTTS(summaryText, episode.voice as VoiceName, undefined, makeRetryOptions());
+        const speechRequest = buildSpeechRequestText(summaryText, useSpeechCleanup);
+        const base64 = await generateTTS(
+          speechRequest.speechText,
+          episode.voice as VoiceName,
+          undefined,
+          {
+            ...makeRetryOptions(),
+            languageHint: speechRequest.languageHint,
+          }
+        );
         setRetryNotice(null);
         const pcmBytes = decodeBase64ToUint8(base64);
         wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
@@ -2295,7 +2937,7 @@ const App: React.FC = () => {
         return data;
       }
 
-      await sleep(800);
+      await sleep(CHUNK_POLL_INTERVAL_MS);
     }
 
     return null;
@@ -2363,7 +3005,7 @@ const App: React.FC = () => {
       }
     } catch (e) { 
       console.error('Chunk playback failed', e);
-      setError('Playback failed.'); 
+      setError(t('playback_failed')); 
     } finally {
       if (requestId === playRequestRef.current) {
         setIsLoadingChunk(false);
@@ -2694,6 +3336,30 @@ const App: React.FC = () => {
     }
   };
 
+  const buildImportFailureMessage = (
+    kind: 'image' | 'document',
+    failedNames: string[],
+    successfulCount: number
+  ) => {
+    if (failedNames.length === 0) {
+      return null;
+    }
+
+    if (successfulCount === 0) {
+      return kind === 'image' ? t('image_import_failed') : t('document_import_failed');
+    }
+
+    if (failedNames.length === 1) {
+      return kind === 'image'
+        ? formatTemplate(t('image_import_partial_single'), { name: failedNames[0] })
+        : formatTemplate(t('document_import_partial_single'), { name: failedNames[0] });
+    }
+
+    return kind === 'image'
+      ? formatTemplate(t('image_import_partial_multiple'), { count: failedNames.length })
+      : formatTemplate(t('document_import_partial_multiple'), { count: failedNames.length });
+  };
+
   const processImages = async (
     rawFiles: File[],
     clearSource: () => void,
@@ -2708,14 +3374,19 @@ const App: React.FC = () => {
     const importSession = startImportSession(source);
     setScanSource(source);
     setRetryNotice(null);
+    setError(null);
 
     setScanSession({
       startedAt: Date.now(),
       totalItems: files.length,
       completedItems: 0,
-      estimatedSeconds: estimateImageScanSeconds(files.length)
+      estimatedSeconds: estimateImageBatchScanSeconds(files)
     });
     await waitForNextPaint();
+
+    const failedNames: string[] = [];
+    let successfulCount = 0;
+    let hasInsertedSeparator = false;
 
     try {
       for (let i = 0; i < files.length; i++) {
@@ -2723,37 +3394,46 @@ const App: React.FC = () => {
         try {
           const cachedText = await readImportTextCache(file);
           if (cachedText?.trim()) {
-            appendImportSessionText(importSession.id, cachedText);
-            if (i < files.length - 1) {
+            if (hasInsertedSeparator) {
               appendImportSessionText(importSession.id, '\n\n');
             }
+            appendImportSessionText(importSession.id, cachedText);
+            hasInsertedSeparator = true;
           } else {
-            const base64 = await readFileAsBase64(file);
+            const optimizedFile = await optimizeImageForImport(file);
+            const base64 = await readFileAsBase64(optimizedFile);
             let extractedText = '';
+            if (hasInsertedSeparator) {
+              appendImportSessionText(importSession.id, '\n\n');
+            }
             await streamIntoImportSession(importSession.id, async (onChunk) => {
-              await streamTextFromImage(base64, file.type, (textChunk) => {
+              await streamTextFromImage(base64, optimizedFile.type || IMAGE_IMPORT_COMPRESSED_MIME, (textChunk) => {
                 extractedText += textChunk;
                 onChunk(textChunk);
               });
-            }, {
-              suffix: i < files.length - 1 ? '\n\n' : '',
             });
             await writeImportTextCache(file, extractedText);
+            hasInsertedSeparator = true;
           }
+          successfulCount += 1;
           setRetryNotice(null);
-        } catch (err) {
-          throw new Error(`Image ${i + 1} failed.`);
+        } catch (error) {
+          console.error('Image import failed', file.name, error);
+          failedNames.push(file.name);
         }
         setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
       }
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : 'Image import failed.');
     } finally {
       completeImportSession(importSession.id);
       setScanSource(null);
       setScanSession(null);
       setRetryNotice(null);
       clearSource();
+    }
+
+    const failureMessage = buildImportFailureMessage('image', failedNames, successfulCount);
+    if (failureMessage) {
+      setError(failureMessage);
     }
   };
 
@@ -2770,6 +3450,7 @@ const App: React.FC = () => {
     const importSession = startImportSession('document');
     setScanSource('document');
     setRetryNotice(null);
+    setError(null);
     setScanSession({
       startedAt: Date.now(),
       totalItems: files.length,
@@ -2778,53 +3459,70 @@ const App: React.FC = () => {
     });
     await waitForNextPaint();
 
+    const failedNames: string[] = [];
+    let successfulCount = 0;
+    let hasInsertedSeparator = false;
+
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const suffix = i < files.length - 1 ? '\n\n' : '';
 
         try {
           const cachedText = await readImportTextCache(file);
           if (cachedText?.trim()) {
-            appendImportSessionText(importSession.id, cachedText);
-            if (suffix) {
-              appendImportSessionText(importSession.id, suffix);
+            if (hasInsertedSeparator) {
+              appendImportSessionText(importSession.id, '\n\n');
             }
+            appendImportSessionText(importSession.id, cachedText);
+            hasInsertedSeparator = true;
           } else if (isTextDocumentFile(file)) {
             let extractedText = '';
+            if (hasInsertedSeparator) {
+              appendImportSessionText(importSession.id, '\n\n');
+            }
             await streamIntoImportSession(importSession.id, async (onChunk) => {
               await streamLocalDocumentText(file, (textChunk) => {
                 extractedText += textChunk;
                 onChunk(textChunk);
               });
-            }, { suffix });
+            });
             await writeImportTextCache(file, extractedText);
+            hasInsertedSeparator = true;
           } else {
             const base64 = await readFileAsBase64(file);
             let extractedText = '';
+            if (hasInsertedSeparator) {
+              appendImportSessionText(importSession.id, '\n\n');
+            }
             await streamIntoImportSession(importSession.id, async (onChunk) => {
               await streamTextFromPdf(base64, (textChunk) => {
                 extractedText += textChunk;
                 onChunk(textChunk);
               });
-            }, { suffix });
+            });
             await writeImportTextCache(file, extractedText);
+            hasInsertedSeparator = true;
           }
+          successfulCount += 1;
           setRetryNotice(null);
-        } catch (err) {
-          throw new Error(`Document ${i + 1} failed.`);
+        } catch (error) {
+          console.error('Document import failed', file.name, error);
+          failedNames.push(file.name);
         }
 
         setScanSession(prev => prev ? { ...prev, completedItems: i + 1 } : prev);
       }
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : 'Document import failed.');
     } finally {
       completeImportSession(importSession.id);
       setScanSource(null);
       setScanSession(null);
       setRetryNotice(null);
       clearSource();
+    }
+
+    const failureMessage = buildImportFailureMessage('document', failedNames, successfulCount);
+    if (failureMessage) {
+      setError(failureMessage);
     }
   };
 
@@ -2850,6 +3548,100 @@ const App: React.FC = () => {
     await processDocuments(Array.from(fileList) as File[], () => {
       e.target.value = '';
     });
+  };
+
+  const openCameraCapture = () => {
+    revokeCameraShotPreviews(cameraShots);
+    setCameraShots([]);
+    setCameraError(null);
+    setError(null);
+    setShowCameraCapture(true);
+  };
+
+  const closeCameraCapture = () => {
+    stopCameraStream();
+    revokeCameraShotPreviews(cameraShots);
+    setCameraShots([]);
+    setCameraError(null);
+    setIsCameraBooting(false);
+    setIsCameraImporting(false);
+    setShowCameraCapture(false);
+  };
+
+  const handleOpenNativeCamera = () => {
+    closeCameraCapture();
+    cameraInputRef.current?.click();
+  };
+
+  const handleCaptureCameraShot = async () => {
+    const video = cameraVideoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError(t('camera_permission_error'));
+      return;
+    }
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('No canvas context available.');
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await canvasToBlob(canvas, IMAGE_IMPORT_COMPRESSED_MIME, 0.92);
+      const timestamp = Date.now();
+      const file = new File([blob], `${CAMERA_CAPTURE_FILENAME_PREFIX}-${timestamp}.jpg`, {
+        type: IMAGE_IMPORT_COMPRESSED_MIME,
+        lastModified: timestamp,
+      });
+
+      setCameraShots(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: URL.createObjectURL(blob),
+        }
+      ]);
+      setCameraError(null);
+    } catch (error) {
+      console.error('Could not capture the camera frame', error);
+      setCameraError(t('camera_permission_error'));
+    }
+  };
+
+  const removeCameraShot = (shotId: string) => {
+    setCameraShots((currentShots) => {
+      const shot = currentShots.find((candidate) => candidate.id === shotId);
+      if (shot) {
+        URL.revokeObjectURL(shot.previewUrl);
+      }
+
+      return currentShots.filter((candidate) => candidate.id !== shotId);
+    });
+  };
+
+  const handleImportCameraShots = async () => {
+    if (cameraShots.length === 0 || isCameraImporting) {
+      return;
+    }
+
+    const shotsToImport = cameraShots;
+    stopCameraStream();
+    setIsCameraImporting(true);
+    setShowCameraCapture(false);
+    setCameraShots([]);
+    setCameraError(null);
+
+    try {
+      await processImages(shotsToImport.map((shot) => shot.file), () => {}, 'camera');
+    } finally {
+      revokeCameraShotPreviews(shotsToImport);
+      setIsCameraImporting(false);
+    }
   };
 
   const handleTranslate = async (lang: string) => {
@@ -3050,12 +3842,17 @@ const App: React.FC = () => {
     ? 'border-red-200 bg-red-50 text-red-700'
     : cloudFeedback?.kind === 'success'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : 'border-[#d7e7fb] bg-[#eef7ff] text-slate-700';
+      : 'border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]';
   const importStatusLabel = scanSource
     ? t('scanning_progress')
     : inputText.trim()
       ? t('import_status_ready')
       : null;
+  const speechCleanupTooltip = useSpeechCleanup
+    ? t('speech_cleanup_tooltip_on')
+    : t('speech_cleanup_tooltip_off');
+  const cameraCountStatus = formatTemplate(t('camera_count_status'), { count: cameraShots.length });
+  const cameraUsePhotosLabel = formatTemplate(t('camera_use_photos_btn'), { count: cameraShots.length });
   const selectedVoiceLabel = PREMIUM_VOICES.find((voice) => voice.name === selectedVoice)?.label ?? selectedVoice;
   const librarySortLabel = librarySortMode === 'oldest'
     ? t('sort_oldest')
@@ -3066,12 +3863,12 @@ const App: React.FC = () => {
     ? summaryTitleDraft.trim() !== resolvedModalNotes.title || summaryBodyDraft.trim() !== resolvedModalNotes.summary
     : false;
   const activeLayoutPreset = LAYOUT_PRESET;
-  const subtleLabelClass = 'text-[10px] font-black uppercase tracking-[0.22em] text-slate-600';
-  const darkFieldClass = 'w-full rounded-2xl border border-[#d4e3f7] bg-white px-4 py-4 text-sm font-semibold text-zinc-900 outline-none shadow-[0_12px_28px_-22px_rgba(15,23,42,0.24)] focus:ring-2 focus:ring-blue-500/18';
-  const darkButtonClass = 'rounded-2xl border border-[#c8daf2] bg-white text-zinc-900 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.2)] transition-colors hover:bg-[#f8fbff]';
-  const accentButtonClass = 'bg-gradient-to-r from-[#1d4ed8] via-[#0284c7] to-[#06b6d4] text-white shadow-[0_20px_38px_-20px_rgba(37,99,235,0.38)]';
-  const libraryItemIdleClass = 'bg-[linear-gradient(180deg,rgba(248,252,255,0.98),rgba(231,241,252,0.96))] border-[#c8daf2] text-zinc-900 shadow-[0_26px_64px_-46px_rgba(2,6,23,0.3)] backdrop-blur';
-  const libraryItemActiveClass = 'bg-gradient-to-br from-blue-600 to-cyan-500 text-white border-transparent shadow-[0_24px_60px_-36px_rgba(59,130,246,0.24)]';
+  const subtleLabelClass = 'text-[10px] font-black uppercase tracking-[0.22em] text-[#5f5497]';
+  const darkFieldClass = 'w-full rounded-2xl border border-[#d8d0ed] bg-white px-4 py-4 text-sm font-semibold text-zinc-900 outline-none shadow-[0_12px_28px_-22px_rgba(32,15,93,0.22)] focus:ring-2 focus:ring-[#7763BE]/22';
+  const darkButtonClass = 'rounded-2xl border border-[#d8d0ed] bg-white text-zinc-900 shadow-[0_18px_36px_-28px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc]';
+  const accentButtonClass = 'bg-gradient-to-r from-[#391BA6] via-[#30168C] to-[#7763BE] text-white shadow-[0_20px_38px_-20px_rgba(57,27,166,0.42)]';
+  const libraryItemIdleClass = 'bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(232,226,246,0.96))] border-[#d8d0ed] text-zinc-900 shadow-[0_26px_64px_-46px_rgba(32,15,93,0.28)] backdrop-blur';
+  const libraryItemActiveClass = 'bg-gradient-to-br from-[#391BA6] via-[#30168C] to-[#7763BE] text-white border-transparent shadow-[0_24px_60px_-36px_rgba(57,27,166,0.34)]';
 
   const openCategoryEditor = (episode: PodcastEpisode) => {
     setEditingCategoryEpisodeId(episode.id);
@@ -3097,7 +3894,7 @@ const App: React.FC = () => {
     const updatedNotes: EpisodeNotes = {
       ...resolvedModalNotes,
       title: truncateText(summaryTitleDraft, 70) || resolvedModalNotes.title,
-      summary: truncateText(summaryBodyDraft, 280) || resolvedModalNotes.summary,
+      summary: truncateText(summaryBodyDraft, MAX_NOTE_SUMMARY_CHARACTERS) || resolvedModalNotes.summary,
     };
 
     patchEpisode(showNotesModal.id, { notes: updatedNotes });
@@ -3107,6 +3904,7 @@ const App: React.FC = () => {
 
   return (
     <div
+      lang={userLang}
       className={activeLayoutPreset.shellClassName}
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
     >
@@ -3115,6 +3913,16 @@ const App: React.FC = () => {
           <div className="flex items-center gap-2 text-left">
             <h1 className={classNames('text-[0.88rem] font-black tracking-[0.01em] text-slate-100/88 md:text-[0.92rem]', activeLayoutPreset.brandClassName)}>VoxPod</h1>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setUserLang(languageToggleTarget)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/16 bg-white/10 text-sm shadow-[0_10px_24px_-18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/16"
+              aria-label={languageToggleLabel}
+              title={languageToggleLabel}
+            >
+              <span aria-hidden="true">{languageToggleFlag}</span>
+            </button>
 
           {isSupabaseConfigured && (
             <button
@@ -3126,6 +3934,7 @@ const App: React.FC = () => {
                   : 'text-slate-200 hover:bg-white/10 hover:text-white'
               )}
               aria-label={t('auth_open_btn')}
+              title={t('auth_open_btn')}
             >
               {authUser ? (
                 <>
@@ -3140,6 +3949,7 @@ const App: React.FC = () => {
               )}
             </button>
           )}
+          </div>
         </div>
       </header>
 
@@ -3151,9 +3961,9 @@ const App: React.FC = () => {
         }}
       >
         {error && (
-          <div className="md:col-span-2 flex items-center justify-between rounded-[1.75rem] border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 shadow-[0_18px_45px_-32px_rgba(239,68,68,0.18)]">
+          <div role="alert" aria-live="assertive" className="md:col-span-2 flex items-center justify-between rounded-[1.75rem] border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 shadow-[0_18px_45px_-32px_rgba(239,68,68,0.18)]">
             <span>{error}</span>
-            <button onClick={() => setError(null)} className="px-2 text-xl text-red-500">×</button>
+            <button onClick={() => setError(null)} className="px-2 text-xl text-red-500" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
           </div>
         )}
 
@@ -3165,7 +3975,7 @@ const App: React.FC = () => {
           />
           <div className={activeLayoutPreset.heroGlowClassName} />
           <div className={activeLayoutPreset.heroGridClassName}>
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(16,12,28,0.08)_26%,rgba(20,14,34,0.82)_100%)]" />
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(242,242,242,0.02),rgba(57,27,166,0.12)_24%,rgba(32,15,93,0.86)_100%)]" />
             <div className="relative z-[2] text-left">
               <h3 className="max-w-[17ch] text-[1.45rem] font-black leading-[1.02] tracking-tight text-white sm:text-[1.6rem] md:text-[1.78rem]">
                 {t('hero_preview_title')}
@@ -3175,7 +3985,7 @@ const App: React.FC = () => {
         </section>
 
         <label htmlFor="camera-upload" className="sr-only">{t('camera_btn')}</label>
-        <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" className="hidden" aria-label={t('camera_btn')} />
+        <input id="camera-upload" name="camera-upload" type="file" ref={cameraInputRef} onChange={handleCameraCapture} accept="image/*" capture="environment" multiple className="hidden" aria-label={t('camera_btn')} />
         <label htmlFor="image-upload" className="sr-only">{t('images_btn')}</label>
         <input id="image-upload" name="image-upload" type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" multiple className="hidden" aria-label={t('images_btn')} />
         <label htmlFor="document-upload" className="sr-only">{t('docs_btn')}</label>
@@ -3187,7 +3997,7 @@ const App: React.FC = () => {
               <span className={subtleLabelClass}>{t('imported_text_label')}</span>
               <div className="flex items-center gap-2">
                 {importStatusLabel && (
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                  <span role="status" aria-live="polite" className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-emerald-700">
                     {importStatusLabel}
                   </span>
                 )}
@@ -3196,40 +4006,48 @@ const App: React.FC = () => {
                     setInputText('');
                   }}
                   disabled={!inputText || isInputLocked}
-                  className="rounded-full border border-[#c8daf2] bg-white px-3.5 py-1.5 text-[10px] font-black text-zinc-800 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.2)] transition-colors hover:bg-[#f8fbff] disabled:bg-zinc-100 disabled:text-zinc-400"
+                  title={t('clear_btn_title')}
+                  aria-label={t('clear_btn_title')}
+                  className="rounded-full border border-[#d8d0ed] bg-white px-3.5 py-1.5 text-[10px] font-black text-zinc-800 shadow-[0_14px_28px_-24px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc] disabled:bg-zinc-100 disabled:text-zinc-400"
                 >
                   {t('clear_btn')}
                 </button>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-[#d4e3f7] bg-[#eef7ff]/84 p-2.5 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.24)] backdrop-blur">
+            <div className="rounded-3xl border border-[#d8d0ed] bg-[#ede8f8]/88 p-2.5 shadow-[0_18px_36px_-34px_rgba(32,15,93,0.22)] backdrop-blur">
               <div className="grid grid-cols-3 gap-2.5">
               <button
                 onClick={() => documentInputRef.current?.click()}
                 disabled={isInputLocked}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                title={t('docs_btn_hint')}
+                aria-label={t('docs_btn_hint')}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'document' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('docs_btn')}
+                {scanSource === 'document' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('docs_btn')}
               </button>
               <button
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={openCameraCapture}
                 disabled={isInputLocked}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                title={t('camera_btn_hint')}
+                aria-label={t('camera_btn_hint')}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'camera' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('camera_btn')}
+                {scanSource === 'camera' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('camera_btn')}
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isInputLocked}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#c8daf2] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.18)] transition-all hover:bg-[#f8fbff] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                title={t('images_btn_hint')}
+                aria-label={t('images_btn_hint')}
+                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'images' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" /> : t('images_btn')}
+                {scanSource === 'images' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('images_btn')}
               </button>
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-3xl border border-[#d4e3f7] bg-white/96">
+            <div className="overflow-hidden rounded-3xl border border-[#d8d0ed] bg-white/96">
               <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
               <textarea
                 id="podcast-text"
@@ -3238,7 +4056,7 @@ const App: React.FC = () => {
                 onChange={(e) => setInputText(e.target.value)}
                 disabled={isInputLocked}
                 placeholder={t('placeholder_text')}
-                className="h-32 w-full resize-none bg-transparent p-4 text-sm leading-relaxed text-zinc-800 outline-none transition-all placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500/20 disabled:text-zinc-400 lg:h-52"
+                className="h-32 w-full resize-none bg-transparent p-4 text-sm leading-relaxed text-zinc-800 outline-none transition-all placeholder:text-zinc-400 focus:ring-2 focus:ring-[#7763BE]/22 disabled:text-zinc-400 lg:h-52"
               />
             </div>
 
@@ -3255,7 +4073,9 @@ const App: React.FC = () => {
                     setShowSortMenu(false);
                   }}
                   disabled={isInputLocked}
-                    className="flex w-full items-center justify-between rounded-2xl border border-[#c8daf2] bg-white px-4 py-3.5 text-[11px] font-black text-zinc-900 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.18)] transition-colors hover:bg-[#f8fbff] disabled:bg-zinc-100 disabled:text-zinc-400"
+                  title={t('voice_label')}
+                  aria-label={t('voice_label')}
+                    className="flex w-full items-center justify-between rounded-2xl border border-[#d8d0ed] bg-white px-4 py-3.5 text-[11px] font-black text-zinc-900 shadow-[0_16px_34px_-28px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc] disabled:bg-zinc-100 disabled:text-zinc-400"
                   >
                     <span>{selectedVoiceLabel}</span>
                     <span className="text-zinc-400">▾</span>
@@ -3264,7 +4084,7 @@ const App: React.FC = () => {
                   {showVoiceMenu && (
                     <div
                       ref={voiceMenuRef}
-                      className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[260px] min-w-full gap-1 overflow-y-auto rounded-2xl border border-[#c8daf2] bg-[#eef6ff] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(2,6,23,0.26)] outline-none duration-200"
+                      className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[260px] min-w-full gap-1 overflow-y-auto rounded-2xl border border-[#d8d0ed] bg-[#f3effb] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(32,15,93,0.24)] outline-none duration-200"
                     >
                       {PREMIUM_VOICES.map((voice) => {
                         const isSelected = voice.name === selectedVoice;
@@ -3277,19 +4097,45 @@ const App: React.FC = () => {
                               setSelectedVoice(voice.name);
                               setShowVoiceMenu(false);
                             }}
+                            title={voice.label}
+                            aria-label={voice.label}
                             className={classNames(
                               'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-semibold transition-colors',
-                              isSelected ? 'bg-blue-50 text-zinc-900' : 'text-zinc-700 hover:bg-sky-50'
+                              isSelected ? 'bg-[#ece5fb] text-zinc-900' : 'text-zinc-700 hover:bg-[#eee9f8]'
                             )}
                           >
                             <span>{voice.label}</span>
-                            <span className={classNames('text-xs', isSelected ? 'text-blue-700' : 'text-transparent')}>✓</span>
+                            <span className={classNames('text-xs', isSelected ? 'text-[#391BA6]' : 'text-transparent')}>✓</span>
                           </button>
                         );
                       })}
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setUseSpeechCleanup((current) => !current)}
+                  aria-pressed={useSpeechCleanup}
+                  aria-label={speechCleanupTooltip}
+                  title={speechCleanupTooltip}
+                  className={classNames(
+                    'inline-flex h-11 w-11 items-center justify-center rounded-2xl border shadow-[0_16px_30px_-24px_rgba(32,15,93,0.16)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/30',
+                    useSpeechCleanup
+                      ? 'border-[#cfc5ea] bg-[#eee9f8] text-[#391BA6] hover:bg-[#e8e0fa]'
+                      : 'border-[#d8d0ed] bg-white text-zinc-500 hover:bg-[#f7f4fc] hover:text-zinc-800'
+                  )}
+                >
+                  <span className="sr-only">{speechCleanupTooltip}</span>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.8]" aria-hidden="true">
+                    <path d="M4 6h16" />
+                    <path d="M7 12h10" />
+                    <path d="M10 18h4" />
+                    {useSpeechCleanup && <path d="m5 5 14 14" />}
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -3303,7 +4149,9 @@ const App: React.FC = () => {
                     setShowSortMenu(false);
                   }}
                   disabled={isInputLocked || !inputText}
-                  className={classNames('flex min-w-0 min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#2156d9] px-3 text-[10px] font-black text-white shadow-[0_18px_36px_-24px_rgba(37,99,235,0.42)] transition-all active:scale-[0.98] disabled:bg-zinc-200 disabled:text-zinc-500 sm:text-[11px]', !isInputLocked && inputText ? 'hover:bg-[#1d4ed8]' : '')}
+                  title={t('translate_btn_hint')}
+                  aria-label={t('translate_btn_hint')}
+                  className={classNames('flex min-w-0 min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#391BA6] px-3 text-[10px] font-black text-white shadow-[0_18px_36px_-24px_rgba(57,27,166,0.42)] transition-all active:scale-[0.98] disabled:bg-zinc-200 disabled:text-zinc-500 sm:text-[11px]', !isInputLocked && inputText ? 'hover:bg-[#30168C]' : '')}
                 >
                   {isTranslating ? (
                     <span className="flex items-center gap-1.5">
@@ -3318,22 +4166,24 @@ const App: React.FC = () => {
                     ref={langMenuRef}
                     onKeyDown={handleLangKeyDown}
                     tabIndex={0}
-                    className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[280px] min-w-[180px] gap-1 overflow-y-auto rounded-2xl border border-sky-100 bg-[#eef6ff] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(2,6,23,0.26)] outline-none duration-200"
+                    className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-0 z-50 mb-2 grid max-h-[280px] min-w-[180px] gap-1 overflow-y-auto rounded-2xl border border-[#d8d0ed] bg-[#f3effb] p-2 py-3 shadow-[0_22px_52px_-32px_rgba(32,15,93,0.24)] outline-none duration-200"
                   >
                     {LANGUAGES.map((lang) => (
                       <button
                         key={lang.code}
                         onClick={() => handleTranslate(lang.code)}
-                        className="whitespace-nowrap rounded-2xl px-4 py-2.5 text-left text-[11px] font-black text-zinc-700 transition-colors hover:bg-sky-50 focus:bg-sky-50 focus:outline-none active:bg-blue-50"
+                        title={lang.labels[userLang]}
+                        aria-label={lang.labels[userLang]}
+                        className="whitespace-nowrap rounded-2xl px-4 py-2.5 text-left text-[11px] font-black text-zinc-700 transition-colors hover:bg-[#eee9f8] focus:bg-[#eee9f8] focus:outline-none active:bg-[#ece5fb]"
                       >
-                        {lang.label}
+                        {lang.labels[userLang]}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
 
-              <button onClick={handleGenerate} disabled={isGenerateDisabled} className="relative min-w-0 min-h-[52px] overflow-hidden rounded-2xl bg-[#0891b2] px-4 py-3 text-center text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(8,145,178,0.42)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
+              <button onClick={handleGenerate} disabled={isGenerateDisabled} title={t('generate_btn_hint')} aria-label={t('generate_btn_hint')} className="relative min-w-0 min-h-[52px] overflow-hidden rounded-2xl bg-[#7763BE] px-4 py-3 text-center text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(119,99,190,0.38)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
                 {activePrimaryButton && (
                   <div
                     className="absolute inset-y-0 left-0 bg-white/12 transition-all duration-500"
@@ -3380,19 +4230,21 @@ const App: React.FC = () => {
                     setShowLangMenu(false);
                     setShowVoiceMenu(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-[1.6rem] border border-[#c8daf2] bg-white px-4 py-3.5 text-left shadow-[0_20px_34px_-28px_rgba(15,23,42,0.18)] transition-colors hover:bg-[#f8fbff]"
+                  title={t('sort_label')}
+                  aria-label={t('sort_label')}
+                  className="flex w-full items-center justify-between rounded-[1.6rem] border border-[#d8d0ed] bg-white px-4 py-3.5 text-left shadow-[0_20px_34px_-28px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc]"
                 >
                   <span className="min-w-0">
                     <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{t('sort_label')}</span>
                     <span className="mt-1 block truncate text-sm font-black text-zinc-900">{librarySortLabel}</span>
                   </span>
-                  <span className="ml-4 shrink-0 rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-blue-700">▾</span>
+                  <span className="ml-4 shrink-0 rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#391BA6]">▾</span>
                 </button>
 
                 {showSortMenu && (
                   <div
                     ref={sortMenuRef}
-                    className="custom-scrollbar animate-in fade-in slide-in-from-top-2 absolute inset-x-0 top-full z-[80] mt-2 grid gap-1 overflow-hidden rounded-[1.6rem] border border-[#c8daf2] bg-[linear-gradient(180deg,rgba(247,251,255,0.99),rgba(232,241,252,0.97))] p-2.5 shadow-[0_28px_64px_-36px_rgba(2,6,23,0.32)] duration-200"
+                    className="custom-scrollbar animate-in fade-in slide-in-from-top-2 absolute inset-x-0 top-full z-[80] mt-2 grid gap-1 overflow-hidden rounded-[1.6rem] border border-[#d8d0ed] bg-[linear-gradient(180deg,rgba(242,242,242,0.99),rgba(234,229,248,0.97))] p-2.5 shadow-[0_28px_64px_-36px_rgba(32,15,93,0.3)] duration-200"
                   >
                     {(['newest', 'oldest', 'title'] as LibrarySortMode[]).map((mode) => {
                       const label = mode === 'oldest' ? t('sort_oldest') : mode === 'title' ? t('sort_title') : t('sort_newest');
@@ -3406,13 +4258,15 @@ const App: React.FC = () => {
                             setLibrarySortMode(mode);
                             setShowSortMenu(false);
                           }}
+                          title={label}
+                          aria-label={label}
                           className={classNames(
                             'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-black transition-colors',
-                            isSelected ? 'bg-[#e7f1ff] text-zinc-900 shadow-[0_14px_28px_-26px_rgba(37,99,235,0.32)]' : 'text-zinc-700 hover:bg-[#eef7ff]'
+                            isSelected ? 'bg-[#ece5fb] text-zinc-900 shadow-[0_14px_28px_-26px_rgba(57,27,166,0.26)]' : 'text-zinc-700 hover:bg-[#eee9f8]'
                           )}
                         >
                           <span>{label}</span>
-                          <span className={classNames('text-xs', isSelected ? 'text-blue-700' : 'text-transparent')}>✓</span>
+                          <span className={classNames('text-xs', isSelected ? 'text-[#391BA6]' : 'text-transparent')}>✓</span>
                         </button>
                       );
                     })}
@@ -3425,10 +4279,12 @@ const App: React.FC = () => {
               <div className="flex gap-2 overflow-x-auto pb-1">
                 <button
                   onClick={() => setActiveCategoryFilter('all')}
+                    title={t('all_categories')}
+                    aria-label={t('all_categories')}
                     className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
                     activeCategoryFilter === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'border border-[#c8daf2] bg-white text-zinc-800'
+                      ? 'bg-[#391BA6] text-white'
+                      : 'border border-[#d8d0ed] bg-white text-zinc-800'
                   }`}
                 >
                   {t('all_categories')}
@@ -3437,10 +4293,12 @@ const App: React.FC = () => {
                   <button
                     key={category}
                   onClick={() => setActiveCategoryFilter(category)}
+                  title={category}
+                  aria-label={category}
                   className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
                     activeCategoryFilter === category
-                      ? 'bg-blue-600 text-white'
-                      : 'border border-[#c8daf2] bg-white text-zinc-800'
+                      ? 'bg-[#391BA6] text-white'
+                      : 'border border-[#d8d0ed] bg-white text-zinc-800'
                   }`}
                 >
                   {category}
@@ -3457,21 +4315,31 @@ const App: React.FC = () => {
               const episodeRuntime = formatTime(getEpisodeDuration(ep));
               const libraryActionClass = isActiveEpisode
                 ? 'border-white/15 bg-white/12 text-white hover:bg-white/18'
-                : 'border-[#c8daf2] bg-white/96 text-slate-600 hover:bg-white hover:text-slate-900';
+                : 'border-[#d8d0ed] bg-white/96 text-slate-600 hover:bg-[#f7f4fc] hover:text-slate-900';
 
               return (
                 <div
                   key={ep.id}
                   onClick={() => handlePlayEpisode(ep)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handlePlayEpisode(ep);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  title={`${t('open_episode_title')}: ${ep.title}`}
+                  aria-label={`${t('open_episode_title')}: ${ep.title}`}
                   className={classNames(
-                    'w-full min-w-0 cursor-pointer rounded-[2rem] border p-4 transition-all duration-200 hover:-translate-y-0.5 sm:p-5',
+                    'w-full min-w-0 cursor-pointer rounded-[2rem] border p-4 transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/35 sm:p-5',
                     isActiveEpisode ? libraryItemActiveClass : libraryItemIdleClass
                   )}
                 >
                   <div className="flex items-start gap-3">
                     <div className={classNames(
                       'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                      isActiveEpisode ? 'bg-white/18 text-white' : 'bg-white text-sky-700 shadow-[0_16px_28px_-24px_rgba(37,99,235,0.26)]'
+                      isActiveEpisode ? 'bg-white/18 text-white' : 'bg-white text-[#391BA6] shadow-[0_16px_28px_-24px_rgba(57,27,166,0.24)]'
                     )}>
                       <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
                         <path d="M4 14v-4" />
@@ -3492,7 +4360,7 @@ const App: React.FC = () => {
                         </div>
                         <span className={classNames(
                           'shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black',
-                          isActiveEpisode ? 'bg-white/14 text-white/90' : 'border border-[#d4e3f7] bg-[#eef7ff] text-slate-700'
+                          isActiveEpisode ? 'bg-white/14 text-white/90' : 'border border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]'
                         )}>
                           {episodeRuntime}
                         </span>
@@ -3501,7 +4369,7 @@ const App: React.FC = () => {
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         <span className={classNames(
                           'rounded-full px-2.5 py-1 text-[9px] font-black',
-                          isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-[#d4e3f7] bg-white text-slate-700'
+                          isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-[#d8d0ed] bg-white text-[#4d3d93]'
                         )}>
                           {t('voice_label')}: {episodeVoice}
                         </span>
@@ -3510,7 +4378,7 @@ const App: React.FC = () => {
                             key={`${ep.id}-${category}`}
                             className={classNames(
                               'rounded-full px-2.5 py-1 text-[9px] font-black',
-                              isActiveEpisode ? 'bg-white/12 text-white/84' : 'bg-[#edf4ff] text-slate-600'
+                              isActiveEpisode ? 'bg-white/12 text-white/84' : 'bg-[#ede8f8] text-[#5f5497]'
                             )}
                           >
                             {category}
@@ -3528,6 +4396,7 @@ const App: React.FC = () => {
                       }}
                       className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
                       title={t('edit_categories_btn')}
+                      aria-label={t('edit_categories_btn')}
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                         <path d="m9 7 1.5-2h9L18 8" />
@@ -3542,9 +4411,10 @@ const App: React.FC = () => {
                       }}
                       className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
                       title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
+                      aria-label={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
                     >
                       {summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading ? (
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6] animate-spin" />
                       ) : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? (
                         <span className="text-[11px] font-black">II</span>
                       ) : (
@@ -3565,6 +4435,7 @@ const App: React.FC = () => {
                         }}
                         className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
                         title={t('notes_title')}
+                        aria-label={t('notes_title')}
                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                           <path d="M7 4h10a2 2 0 0 1 2 2v12l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2Z" />
@@ -3580,10 +4451,11 @@ const App: React.FC = () => {
                       }}
                       disabled={ep.generationStatus === 'processing'}
                       className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-40', libraryActionClass)}
-                      title="Download MP3"
+                      title={t('download_mp3_title')}
+                      aria-label={t('download_mp3_title')}
                     >
                       {isDownloading === ep.id || ep.generationStatus === 'processing' ? (
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6] animate-spin" />
                       ) : (
                         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                           <path d="M12 4v10" />
@@ -3597,11 +4469,13 @@ const App: React.FC = () => {
                         event.stopPropagation();
                         void handleDeleteEpisode(ep);
                       }}
+                      title={t('delete_episode_title')}
+                      aria-label={t('delete_episode_title')}
                       className={classNames(
                         'flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors',
                         isActiveEpisode
                           ? 'border-white/12 bg-white/8 text-white/86 hover:bg-white/16'
-                          : 'border-[#c8daf2] bg-white/96 text-slate-500 hover:bg-white hover:text-slate-900'
+                          : 'border-[#d8d0ed] bg-white/96 text-slate-500 hover:bg-[#f7f4fc] hover:text-slate-900'
                       )}
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
@@ -3615,10 +4489,10 @@ const App: React.FC = () => {
               );
             })}
             {library.length === 0 && (
-              <p className="rounded-[2rem] border-2 border-dashed border-[#c8daf2] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-300">{t('empty_library')}</p>
+              <p className="rounded-[2rem] border-2 border-dashed border-[#d8d0ed] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-[#d9d0ef]">{t('empty_library')}</p>
             )}
             {library.length > 0 && displayedLibrary.length === 0 && (
-              <p className="rounded-[2rem] border-2 border-dashed border-[#c8daf2] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-300">{t('empty_category_filter')}</p>
+              <p className="rounded-[2rem] border-2 border-dashed border-[#d8d0ed] py-10 text-center text-[10px] font-bold uppercase tracking-widest text-[#d9d0ef]">{t('empty_category_filter')}</p>
             )}
           </div>
         </section>
@@ -3635,11 +4509,14 @@ const App: React.FC = () => {
             <div className="mx-auto flex max-w-[430px] justify-end md:max-w-[860px] lg:max-w-6xl">
               <section
                 className={classNames('w-full max-w-[380px] space-y-4 p-5 animate-in fade-in slide-in-from-top-2 slide-in-from-right-4 duration-300', activeLayoutPreset.panelClassName)}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="account-panel-title"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="text-left">
-                    <h2 className="text-lg font-black text-zinc-950">{t('auth_title')}</h2>
+                    <h2 id="account-panel-title" className="text-lg font-black text-zinc-950">{t('auth_title')}</h2>
                     {!authUser && (
                       <p className="mt-2 text-base font-black tracking-tight text-zinc-950">
                         {t('hero_feature_title')}
@@ -3654,25 +4531,28 @@ const App: React.FC = () => {
                     onClick={() => setShowAuthPanel(false)}
                     className="text-2xl text-zinc-400 transition-colors hover:text-zinc-700"
                     aria-label={t('close_btn')}
+                    title={t('close_btn')}
                   >
                     ×
                   </button>
                 </div>
 
                 {cloudFeedback && (
-                  <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
+                  <div role="status" aria-live="polite" className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
                     {isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}
                   </div>
                 )}
 
                 {authFeedback && (
                   <div
+                    role="status"
+                    aria-live="polite"
                     className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
                       authFeedback.kind === 'error'
                         ? 'border-red-200 bg-red-50 text-red-700'
                         : authFeedback.kind === 'success'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'border-sky-100 bg-sky-50 text-zinc-700'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]'
                     }`}
                   >
                     {authFeedback.message}
@@ -3681,7 +4561,7 @@ const App: React.FC = () => {
 
                 {authUser ? (
                   <>
-                    <div className="rounded-3xl border border-sky-100 bg-sky-50/80 p-5 text-left">
+                    <div className="rounded-3xl border border-[#d8d0ed] bg-[#eee9f8]/88 p-5 text-left">
                       <p className={subtleLabelClass}>{t('auth_signed_in_as')}</p>
                       <p className="mt-2 break-all text-sm font-bold text-zinc-900">{authStatusEmail}</p>
                     </div>
@@ -3689,6 +4569,8 @@ const App: React.FC = () => {
                     <button
                       onClick={() => { void handleSignOut(); }}
                       disabled={isAuthLoading}
+                      title={t('auth_sign_out_btn')}
+                      aria-label={t('auth_sign_out_btn')}
                       className={classNames('w-full min-h-[58px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 active:scale-95 transition-all', darkButtonClass)}
                     >
                       {t('auth_sign_out_btn')}
@@ -3696,9 +4578,11 @@ const App: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50/80 p-1">
+                    <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#ede8f8]/92 p-1">
                       <button
                         onClick={() => setAuthMode('signIn')}
+                        title={t('auth_sign_in_tab')}
+                        aria-label={t('auth_sign_in_tab')}
                         className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
                           authMode === 'signIn' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
                         }`}
@@ -3707,6 +4591,8 @@ const App: React.FC = () => {
                       </button>
                       <button
                         onClick={() => setAuthMode('signUp')}
+                        title={t('auth_sign_up_tab')}
+                        aria-label={t('auth_sign_up_tab')}
                         className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
                           authMode === 'signUp' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
                         }`}
@@ -3746,6 +4632,8 @@ const App: React.FC = () => {
                     <button
                       onClick={() => { void handleSubmitAuth(); }}
                       disabled={isAuthSubmitDisabled}
+                      title={authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
+                      aria-label={authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
                       className={classNames('w-full min-h-[64px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none active:scale-95 transition-all', accentButtonClass)}
                     >
                       {isAuthLoading
@@ -3768,7 +4656,7 @@ const App: React.FC = () => {
             <div className="flex justify-center">
               <button
                 onClick={() => setIsPlayerCollapsed(prev => !prev)}
-                className="flex h-7 w-12 items-center justify-center rounded-full border border-[#c8daf2] bg-white text-sm font-black text-zinc-700 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)] transition-colors hover:bg-[#f8fbff]"
+                className="flex h-7 w-12 items-center justify-center rounded-full border border-[#d8d0ed] bg-white text-sm font-black text-zinc-700 shadow-[0_14px_28px_-24px_rgba(32,15,93,0.22)] transition-colors hover:bg-[#f7f4fc]"
                 title={isPlayerCollapsed ? t('player_show') : t('player_hide')}
                 aria-label={isPlayerCollapsed ? t('player_show') : t('player_hide')}
               >
@@ -3777,9 +4665,11 @@ const App: React.FC = () => {
             </div>
 
             {isPlayerCollapsed ? (
-              <div className="flex items-center gap-3 rounded-[2rem] border border-[#c8daf2] bg-white/92 px-4 py-3 shadow-[0_22px_40px_-32px_rgba(15,23,42,0.28)]">
+              <div className="flex items-center gap-3 rounded-[2rem] border border-[#d8d0ed] bg-white/92 px-4 py-3 shadow-[0_22px_40px_-32px_rgba(32,15,93,0.26)]">
                 <button
                   onClick={() => { void handleTogglePlay(); }}
+                  title={player.isPlaying ? t('pause_btn') : t('play_btn')}
+                  aria-label={player.isPlaying ? t('pause_btn') : t('play_btn')}
                   className={classNames('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg text-white', accentButtonClass)}
                 >
                   {isLoadingChunk ? (
@@ -3796,14 +4686,15 @@ const App: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsPlayerCollapsed(false)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#c8daf2] bg-white text-zinc-700 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)]"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#d8d0ed] bg-white text-zinc-700 shadow-[0_14px_28px_-24px_rgba(32,15,93,0.22)]"
                   title={t('player_show')}
+                  aria-label={t('player_show')}
                 >
                   ↑
                 </button>
               </div>
             ) : (
-              <div className="rounded-[2.25rem] border border-[#c8daf2] bg-white/86 p-4 shadow-[0_28px_54px_-40px_rgba(15,23,42,0.34)] sm:p-5">
+              <div className="rounded-[2.25rem] border border-[#d8d0ed] bg-white/88 p-4 shadow-[0_28px_54px_-40px_rgba(32,15,93,0.32)] sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 text-left">
                     <p className={subtleLabelClass}>{t('now_playing_label')}</p>
@@ -3811,14 +4702,14 @@ const App: React.FC = () => {
                       {player.activeEpisode.title}
                     </h4>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-slate-700">
+                      <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
                         {t('voice_label')}: {activeEpisodeVoiceLabel}
                       </span>
-                      <span className="rounded-full border border-[#d4e3f7] bg-[#eef7ff] px-3 py-1.5 text-[10px] font-black text-slate-700">
+                      <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
                         {t('runtime_label')}: {activeEpisodeRuntime}
                       </span>
                       {player.activeEpisode.generationStatus === 'processing' && (
-                        <span className="rounded-full border border-[#d4e3f7] bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700">
+                        <span className="rounded-full border border-[#d8d0ed] bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700">
                           {t('creating_podcast')}
                         </span>
                       )}
@@ -3830,6 +4721,7 @@ const App: React.FC = () => {
                       onClick={() => setShowSpeedControls(prev => !prev)}
                       className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
                       title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
+                      aria-label={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                         <path d="M12 4v3" />
@@ -3849,6 +4741,7 @@ const App: React.FC = () => {
                       onClick={handleAddEpisodeBookmark}
                       className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
                       title={t('add_bookmark_btn')}
+                      aria-label={t('add_bookmark_btn')}
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                         <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
@@ -3861,7 +4754,7 @@ const App: React.FC = () => {
                 <div className="mt-5 space-y-2">
                   <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-slate-200/90 shadow-inner">
                     <div
-                      className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-[#1d4ed8] via-[#0284c7] to-[#06b6d4] transition-all duration-300 ease-out shadow-[0_0_12px_rgba(37,99,235,0.28)]"
+                      className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-[#391BA6] via-[#30168C] to-[#7763BE] transition-all duration-300 ease-out shadow-[0_0_12px_rgba(57,27,166,0.28)]"
                       style={{ width: `${player.duration ? (player.currentTime / player.duration) * 100 : 0}%` }}
                     />
                     <input
@@ -3873,7 +4766,7 @@ const App: React.FC = () => {
                       step="0.1"
                       value={player.duration ? (player.currentTime / player.duration) * 100 : 0}
                       onChange={(e) => { void handleSeek(parseFloat(e.target.value)); }}
-                      aria-label="Playback position"
+                      aria-label={t('playback_position_label')}
                       className="absolute inset-0 h-full w-full cursor-pointer opacity-0 z-10"
                     />
                   </div>
@@ -3884,7 +4777,7 @@ const App: React.FC = () => {
                 </div>
 
                 {showSpeedControls && (
-                  <div className="mt-4 rounded-[1.75rem] border border-[#d4e3f7] bg-[#eef7ff]/92 p-4">
+                  <div className="mt-4 rounded-[1.75rem] border border-[#d8d0ed] bg-[#eee9f8]/92 p-4">
                     <div className="flex items-center justify-between gap-4">
                       <label htmlFor="player-speed-slider" className={subtleLabelClass}>{t('speed_label')}</label>
                       <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-zinc-900 shadow-[0_14px_26px_-22px_rgba(15,23,42,0.2)]">{playbackRate.toFixed(1)}x</span>
@@ -3898,13 +4791,13 @@ const App: React.FC = () => {
                       step="0.1"
                       value={playbackRate}
                       onChange={(e) => applyPlaybackRate(parseFloat(e.target.value))}
-                      className="mt-3 h-1.5 w-full appearance-none cursor-pointer rounded-lg bg-slate-200 accent-blue-600"
+                      className="mt-3 h-1.5 w-full appearance-none cursor-pointer rounded-lg bg-slate-200 accent-[#391BA6]"
                     />
                   </div>
                 )}
 
                 {activeEpisodeBookmarks.length > 0 && (
-                  <div className="mt-4 rounded-[1.75rem] border border-[#d4e3f7] bg-[#eef7ff]/92 p-4 shadow-sm">
+                  <div className="mt-4 rounded-[1.75rem] border border-[#d8d0ed] bg-[#eee9f8]/92 p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <span className={subtleLabelClass}>{t('bookmarks_title')}</span>
                       <span className="text-[10px] font-black text-zinc-500">{activeEpisodeBookmarks.length}</span>
@@ -3914,7 +4807,9 @@ const App: React.FC = () => {
                         <button
                           key={bookmark.id}
                           onClick={() => { if (player.activeEpisode) void jumpToEpisodeTime(player.activeEpisode, bookmark.time); }}
-                          className="shrink-0 rounded-full border border-[#c8daf2] bg-white px-3 py-2 text-[11px] font-black text-zinc-900 transition-colors hover:bg-[#f8fbff]"
+                          title={formatTime(bookmark.time)}
+                          aria-label={formatTime(bookmark.time)}
+                          className="shrink-0 rounded-full border border-[#d8d0ed] bg-white px-3 py-2 text-[11px] font-black text-zinc-900 transition-colors hover:bg-[#f7f4fc]"
                         >
                           {formatTime(bookmark.time)}
                         </button>
@@ -3923,10 +4818,12 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <div className="mt-5 rounded-[1.9rem] border border-[#d4e3f7] bg-[#eef7ff]/94 px-4 py-4 sm:px-5">
+                <div className="mt-5 rounded-[1.9rem] border border-[#d8d0ed] bg-[#eee9f8]/94 px-4 py-4 sm:px-5">
                   <div className="flex items-center justify-between gap-3">
                     <button
                       onClick={() => { void handleSkip(-15); }}
+                      title={t('skip_back_btn')}
+                      aria-label={t('skip_back_btn')}
                       className="flex min-w-[64px] flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-black text-zinc-600 transition-colors active:scale-90 hover:text-zinc-900"
                     >
                       <span className="text-lg">↺</span>
@@ -3934,6 +4831,8 @@ const App: React.FC = () => {
                     </button>
                     <button
                       onClick={() => { void handleTogglePlay(); }}
+                      title={player.isPlaying ? t('pause_btn') : t('play_btn')}
+                      aria-label={player.isPlaying ? t('pause_btn') : t('play_btn')}
                       className={classNames('relative flex h-16 w-16 items-center justify-center rounded-full text-xl text-white transition-all active:scale-95', accentButtonClass)}
                     >
                       {isLoadingChunk ? (
@@ -3944,6 +4843,8 @@ const App: React.FC = () => {
                     </button>
                     <button
                       onClick={() => { void handleSkip(30); }}
+                      title={t('skip_forward_btn')}
+                      aria-label={t('skip_forward_btn')}
                       className="flex min-w-[64px] flex-col items-center gap-0.5 rounded-2xl px-2 py-2 text-[10px] font-black text-zinc-600 transition-colors active:scale-90 hover:text-zinc-900"
                     >
                       <span className="text-lg">↻</span>
@@ -3957,18 +4858,122 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {showCameraCapture && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(15,23,42,0.26)] p-3 backdrop-blur-sm md:items-center md:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="camera-capture-title" aria-describedby="camera-capture-description" className="w-full max-w-xl overflow-hidden rounded-[2.2rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.36)]">
+            <div className="space-y-4 p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 id="camera-capture-title" className="text-lg font-black text-zinc-950">{t('camera_modal_title')}</h3>
+                  <p id="camera-capture-description" className="mt-1 text-sm leading-relaxed text-zinc-500">{t('camera_modal_body')}</p>
+                </div>
+                <button onClick={closeCameraCapture} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
+              </div>
+
+              <div className="overflow-hidden rounded-[2rem] border border-[#d8d0ed] bg-zinc-950 shadow-inner">
+                {cameraError ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+                    <p className="max-w-sm text-sm leading-relaxed text-white/82">{cameraError}</p>
+                    <button
+                      onClick={handleOpenNativeCamera}
+                      title={t('camera_open_native_btn')}
+                      aria-label={t('camera_open_native_btn')}
+                      className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95', accentButtonClass)}
+                    >
+                      {t('camera_open_native_btn')}
+                    </button>
+                  </div>
+                ) : isCameraBooting ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-white">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    <p className="text-sm font-semibold text-white/78">{t('camera_starting')}</p>
+                  </div>
+                ) : (
+                  <video
+                    ref={cameraVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="h-[320px] w-full bg-zinc-950 object-cover sm:h-[420px]"
+                  />
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#5f5497]">{t('camera_btn')}</p>
+                  <p className="mt-1 text-sm font-semibold text-zinc-700">
+                    {cameraShots.length > 0 ? cameraCountStatus : t('camera_shots_empty')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { void handleCaptureCameraShot(); }}
+                  disabled={Boolean(cameraError) || isCameraBooting || isCameraImporting}
+                  title={t('camera_capture_btn')}
+                  aria-label={t('camera_capture_btn')}
+                  className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
+                >
+                  {t('camera_capture_btn')}
+                </button>
+              </div>
+
+              {cameraShots.length > 0 ? (
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {cameraShots.map((shot, index) => (
+                    <div key={shot.id} className="relative w-28 shrink-0 overflow-hidden rounded-[1.4rem] border border-[#d8d0ed] bg-white shadow-sm">
+                      <img src={shot.previewUrl} alt="" className="h-28 w-full object-cover" />
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">#{index + 1}</span>
+                        <button
+                          onClick={() => removeCameraShot(shot.id)}
+                          title={t('camera_remove_photo_btn')}
+                          aria-label={t('camera_remove_photo_btn')}
+                          className="text-[10px] font-black uppercase tracking-[0.16em] text-[#391BA6]"
+                        >
+                          {t('camera_remove_photo_btn')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={closeCameraCapture}
+                  title={t('cancel_btn')}
+                  aria-label={t('cancel_btn')}
+                  className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
+                >
+                  {t('cancel_btn')}
+                </button>
+                <button
+                  onClick={() => { void handleImportCameraShots(); }}
+                  disabled={cameraShots.length === 0 || isCameraImporting}
+                  title={cameraUsePhotosLabel}
+                  aria-label={cameraUsePhotosLabel}
+                  className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
+                >
+                  {isCameraImporting ? t('loading_text') : cameraUsePhotosLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNotesModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-sky-100 bg-[#eaf4ff] shadow-[0_36px_90px_-54px_rgba(2,6,23,0.36)] animate-in zoom-in-95 duration-300">
+          <div role="dialog" aria-modal="true" aria-labelledby="notes-modal-title" className="w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.34)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-black text-zinc-950">{t('notes_title')}</h3>
-                <button onClick={() => setShowNotesModal(null)} className="text-2xl text-zinc-400 hover:text-zinc-700">×</button>
+                <h3 id="notes-modal-title" className="text-lg font-black text-zinc-950">{t('notes_title')}</h3>
+                <button onClick={() => setShowNotesModal(null)} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
               <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-4 pr-1">
                 {resolvedModalNotes ? (
                   <>
-                    <section className="rounded-3xl bg-gradient-to-br from-blue-600 via-sky-500 to-cyan-500 p-6 text-white shadow-lg">
+                    <section className="rounded-3xl bg-gradient-to-br from-[#391BA6] via-[#30168C] to-[#7763BE] p-6 text-white shadow-lg">
                       <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{notesLabels.summary}</p>
                       {isEditingSummary ? (
                         <div className="mt-3 space-y-3">
@@ -3993,7 +4998,7 @@ const App: React.FC = () => {
                               name="summary-body"
                               value={summaryBodyDraft}
                               onChange={(event) => setSummaryBodyDraft(event.target.value)}
-                              className="min-h-[140px] w-full resize-none rounded-2xl border border-white/18 bg-white/14 px-4 py-3 text-sm leading-relaxed text-white outline-none focus:ring-2 focus:ring-white/20"
+                              className="min-h-[200px] w-full resize-none rounded-2xl border border-white/18 bg-white/14 px-4 py-3 text-sm leading-relaxed text-white outline-none focus:ring-2 focus:ring-white/20"
                             />
                           </div>
                         </div>
@@ -4014,6 +5019,8 @@ const App: React.FC = () => {
                               setSummaryBodyDraft(resolvedModalNotes.summary);
                               setIsEditingSummary(false);
                             }}
+                            title={t('cancel_btn')}
+                            aria-label={t('cancel_btn')}
                             className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
                           >
                             {t('cancel_btn')}
@@ -4021,6 +5028,8 @@ const App: React.FC = () => {
                           <button
                             onClick={saveSummaryEdits}
                             disabled={!isSummaryDirty}
+                            title={t('save_summary_btn')}
+                            aria-label={t('save_summary_btn')}
                             className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500', accentButtonClass)}
                           >
                             {t('save_summary_btn')}
@@ -4030,17 +5039,21 @@ const App: React.FC = () => {
                         <>
                           <button
                             onClick={() => setIsEditingSummary(true)}
+                            title={t('edit_summary_btn')}
+                            aria-label={t('edit_summary_btn')}
                             className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
                           >
                             {t('edit_summary_btn')}
                           </button>
                           <button
                             onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
+                            title={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                            aria-label={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
                             className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all ${
                               isModalSummaryPlaying
-                                ? 'border border-sky-100 bg-white/92 text-zinc-700'
-                                : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20'
-                            }`}
+                                ? 'border border-[#d8d0ed] bg-white/92 text-zinc-700'
+                                : 'bg-gradient-to-r from-[#391BA6] to-[#7763BE] text-white shadow-lg shadow-[#391BA6]/20'
+                              }`}
                           >
                             {isModalSummaryLoading ? (
                               <span className="flex items-center justify-center gap-2">
@@ -4054,12 +5067,12 @@ const App: React.FC = () => {
                     </div>
 
                     {resolvedModalNotes.sections.map((section, index) => (
-                      <section key={`${section.heading}-${index}`} className="rounded-3xl border border-sky-100 bg-white/92 p-5 shadow-sm">
+                      <section key={`${section.heading}-${index}`} className="rounded-3xl border border-[#d8d0ed] bg-white/92 p-5 shadow-sm">
                         <h5 className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{section.heading}</h5>
                         <ul className="mt-3 space-y-2">
                           {section.bullets.map((bullet, bulletIndex) => (
                             <li key={`${section.heading}-${bulletIndex}`} className="flex items-start gap-3 text-sm leading-relaxed text-zinc-700">
-                              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#391BA6]" />
                               <span>{bullet}</span>
                             </li>
                           ))}
@@ -4068,13 +5081,15 @@ const App: React.FC = () => {
                     ))}
                   </>
                 ) : (
-                  <div className="rounded-3xl border border-dashed border-sky-100 bg-white/92 p-6 text-sm text-zinc-500">
+                  <div className="rounded-3xl border border-dashed border-[#d8d0ed] bg-white/92 p-6 text-sm text-zinc-500">
                     {t('no_notes')}
                   </div>
                 )}
               </div>
               <button 
                 onClick={() => setShowNotesModal(null)}
+                title={t('close_btn')}
+                aria-label={t('close_btn')}
                 className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase text-white transition-all active:scale-95', accentButtonClass)}
               >
                 {t('close_btn')}
@@ -4086,17 +5101,17 @@ const App: React.FC = () => {
 
       {categoryEditorEpisode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-sky-100 bg-[#eaf4ff] shadow-[0_36px_90px_-54px_rgba(2,6,23,0.36)] animate-in zoom-in-95 duration-300">
+          <div role="dialog" aria-modal="true" aria-labelledby="category-editor-title" className="w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.34)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-5">
               <div className="flex justify-between items-center gap-4">
                 <div className="min-w-0">
-                  <h3 className="text-lg font-black text-zinc-950">{t('categories_title')}</h3>
+                  <h3 id="category-editor-title" className="text-lg font-black text-zinc-950">{t('categories_title')}</h3>
                   <p className="mt-1 truncate text-xs font-bold text-zinc-500">{categoryEditorEpisode.title}</p>
                 </div>
-                <button onClick={closeCategoryEditor} className="text-2xl text-zinc-400 hover:text-zinc-700">×</button>
+                <button onClick={closeCategoryEditor} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
 
-              <div className="rounded-3xl border border-sky-100 bg-white/92 p-5 space-y-3">
+              <div className="rounded-3xl border border-[#d8d0ed] bg-white/92 p-5 space-y-3">
                 <label htmlFor="episode-categories" className={subtleLabelClass}>
                   {t('categories_title')}
                 </label>
@@ -4106,13 +5121,15 @@ const App: React.FC = () => {
                   value={categoryDraft}
                   onChange={(e) => setCategoryDraft(e.target.value)}
                   placeholder={t('category_placeholder')}
-                  className="w-full rounded-2xl border border-sky-100 bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
                 />
                 <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
               </div>
 
               <button
                 onClick={saveEpisodeCategories}
+                title={t('save_categories_btn')}
+                aria-label={t('save_categories_btn')}
                 className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase text-white transition-all active:scale-95', accentButtonClass)}
               >
                 {t('save_categories_btn')}
@@ -4120,6 +5137,8 @@ const App: React.FC = () => {
 
               <button
                 onClick={closeCategoryEditor}
+                title={t('close_btn')}
+                aria-label={t('close_btn')}
                 className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase transition-all active:scale-95', darkButtonClass)}
               >
                 {t('close_btn')}
@@ -4130,6 +5149,14 @@ const App: React.FC = () => {
       )}
 
       <style>{`
+        button:focus-visible,
+        [role="button"]:focus-visible,
+        input:focus-visible,
+        textarea:focus-visible {
+          outline: 3px solid rgba(57, 27, 166, 0.9);
+          outline-offset: 3px;
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
@@ -4140,6 +5167,17 @@ const App: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb {
           background: linear-gradient(180deg, #2563eb 0%, #06b6d4 100%);
           border-radius: 10px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *,
+          *::before,
+          *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+          }
         }
       `}</style>
     </div>

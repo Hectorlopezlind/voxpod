@@ -13,6 +13,10 @@ export type GeminiRequestOptions = {
   onRetry?: (state: GeminiRetryState) => void;
 };
 
+export type GeminiTtsOptions = GeminiRequestOptions & {
+  languageHint?: string;
+};
+
 type GeminiStreamPayload = {
   action: "extractImageStream";
   base64Data: string;
@@ -227,13 +231,14 @@ export const generateTTS = async (
   text: string,
   voice: VoiceName,
   speed: ReadingSpeed = ReadingSpeed.Normal,
-  options?: GeminiRequestOptions
+  options?: GeminiTtsOptions
 ): Promise<string> => {
   const result = await postGemini<{ audio: string }>({
     action: "tts",
     text,
     voice,
     speed,
+    languageHint: options?.languageHint,
   }, options);
 
   return result.audio;
