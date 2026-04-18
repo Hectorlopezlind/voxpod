@@ -3564,12 +3564,32 @@ const App: React.FC = () => {
     }, 'images');
   };
 
-  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const appendFilesToCameraShots = (rawFiles: File[]) => {
+    if (rawFiles.length === 0) {
+      return;
+    }
+
+    const nextShots = rawFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setCameraShots((currentShots) => [...currentShots, ...nextShots]);
+    setCameraError(null);
+    if (!showCameraCapture) {
+      setShowCameraCapture(true);
+    }
+  };
+
+  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-    await processImages(Array.from(fileList) as File[], () => {
-      e.target.value = '';
-    }, 'camera');
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    appendFilesToCameraShots(Array.from(fileList) as File[]);
+    e.target.value = '';
   };
 
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3585,12 +3605,6 @@ const App: React.FC = () => {
     setCameraShots([]);
     setCameraError(null);
     setError(null);
-
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      cameraInputRef.current?.click();
-      return;
-    }
-
     setShowCameraCapture(true);
   };
 
@@ -3605,7 +3619,7 @@ const App: React.FC = () => {
   };
 
   const handleOpenNativeCamera = () => {
-    closeCameraCapture();
+    setCameraError(null);
     cameraInputRef.current?.click();
   };
 
@@ -4968,15 +4982,26 @@ const App: React.FC = () => {
                     {cameraShots.length > 0 ? cameraCountStatus : t('camera_shots_empty')}
                   </p>
                 </div>
-                <button
-                  onClick={() => { void handleCaptureCameraShot(); }}
-                  disabled={Boolean(cameraError) || isCameraBooting || isCameraImporting}
-                  title={t('camera_capture_btn')}
-                  aria-label={t('camera_capture_btn')}
-                  className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
-                >
-                  {t('camera_capture_btn')}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleOpenNativeCamera}
+                    disabled={isCameraImporting}
+                    title={t('camera_open_native_btn')}
+                    aria-label={t('camera_open_native_btn')}
+                    className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-100 disabled:text-zinc-400', darkButtonClass)}
+                  >
+                    {t('camera_open_native_btn')}
+                  </button>
+                  <button
+                    onClick={() => { void handleCaptureCameraShot(); }}
+                    disabled={Boolean(cameraError) || isCameraBooting || isCameraImporting}
+                    title={t('camera_capture_btn')}
+                    aria-label={t('camera_capture_btn')}
+                    className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
+                  >
+                    {t('camera_capture_btn')}
+                  </button>
+                </div>
               </div>
 
               {cameraShots.length > 0 ? (
