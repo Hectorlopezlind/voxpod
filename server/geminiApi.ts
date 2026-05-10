@@ -1,5 +1,6 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { VoiceName, ReadingSpeed, EpisodeNotes, EpisodeNotesSection } from "../types";
+import { extractReadableHtmlText } from "../services/documentService";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -39,11 +40,45 @@ const SPEED_INSTRUCTIONS: Record<ReadingSpeed, string> = {
   [ReadingSpeed.Fast]: "TEMPO: Snabbt."
 };
 
+const NOTES_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  required: ["title", "summary", "sections"],
+  propertyOrdering: ["title", "summary", "sections"],
+  properties: {
+    title: {
+      type: Type.STRING,
+    },
+    summary: {
+      type: Type.STRING,
+    },
+    sections: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        required: ["heading", "bullets"],
+        propertyOrdering: ["heading", "bullets"],
+        properties: {
+          heading: {
+            type: Type.STRING,
+          },
+          bullets: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.STRING,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 type GeminiAction =
   | "tts"
   | "translate"
   | "extractImage"
   | "extractPdf"
+  | "extractWebPage"
   | "extractImageStream"
   | "extractPdfStream"
   | "generateNotes";
@@ -53,6 +88,7 @@ type GeminiRequestBody =
   | { action: "translate"; text: string; targetLanguage: string }
   | { action: "extractImage"; base64Data: string; mimeType: string }
   | { action: "extractPdf"; base64Data: string }
+  | { action: "extractWebPage"; url: string }
   | { action: "extractImageStream"; base64Data: string; mimeType: string }
   | { action: "extractPdfStream"; base64Data: string }
   | { action: "generateNotes"; text: string };
@@ -61,6 +97,7 @@ type TtsBody = Extract<GeminiRequestBody, { action: "tts" }>;
 type TranslateBody = Extract<GeminiRequestBody, { action: "translate" }>;
 type ExtractImageBody = Extract<GeminiRequestBody, { action: "extractImage" }>;
 type ExtractPdfBody = Extract<GeminiRequestBody, { action: "extractPdf" }>;
+type ExtractWebPageBody = Extract<GeminiRequestBody, { action: "extractWebPage" }>;
 type ExtractImageStreamBody = Extract<GeminiRequestBody, { action: "extractImageStream" }>;
 type ExtractPdfStreamBody = Extract<GeminiRequestBody, { action: "extractPdfStream" }>;
 type GenerateNotesBody = Extract<GeminiRequestBody, { action: "generateNotes" }>;
@@ -109,6 +146,9 @@ const normalizeApiError = (error: unknown) => {
   if (message.includes("pdf")) {
     return json({ error: "PDF-läsning misslyckades på serversidan. Prova en mindre eller enklare PDF." }, 500);
   }
+  if (message.includes("länken") || message.includes("webbsidan")) {
+    return json({ error: error instanceof Error ? error.message : "Webbimport misslyckades." }, 502);
+  }
   return json({ error: "Ett oväntat serverfel uppstod." }, 500);
 };
 
@@ -130,6 +170,15 @@ const validateVoice = (value: unknown): value is VoiceName =>
 const validateSpeed = (value: unknown): value is ReadingSpeed =>
   value === undefined ||
   (typeof value === "string" && Object.values(ReadingSpeed).includes(value as ReadingSpeed));
+
+const isHttpUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
 
 const stripCodeFences = (value: string) =>
   value
@@ -217,6 +266,22 @@ const extractGeneratedText = (response: GenerateContentResponse) =>
     .map(part => part.text?.trim() ?? "")
     .find(Boolean) ?? "";
 
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+
+  return btoa(binary);
+};
+
 const callGeminiRest = async (
   model: string,
   body: Record<string, unknown>,
@@ -245,6 +310,41 @@ const callGeminiRest = async (
   } catch {
     throw new Error("Gemini REST returnerade ogiltig JSON.");
   }
+};
+
+const extractPdfTextFromBase64 = async (
+  base64Data: string,
+  options?: GeminiHandlerOptions
+) => {
+  const response = await callGeminiRest(
+    "gemini-2.5-flash",
+    {
+      contents: [
+        {
+          parts: [
+            {
+              text:
+                "Extrahera all text från detta dokument. Hantera olika sidorienteringar och layouter. Städa upp sidhuvuden, sidfötter och sidnummer så att resultatet blir en flytande text lämplig för en ljudbok eller podd. Returnera ENDAST texten."
+            },
+            {
+              inline_data: {
+                mime_type: "application/pdf",
+                data: base64Data,
+              }
+            }
+          ]
+        }
+      ]
+    },
+    options
+  );
+
+  const text = extractGeneratedText(response);
+  if (!text) {
+    throw new Error("PDF-filen gav ingen extraherbar text.");
+  }
+
+  return text;
 };
 
 const handleTts = async (body: TtsBody, options?: GeminiHandlerOptions) => {
@@ -369,33 +469,46 @@ const handleExtractImageStream = async (body: ExtractImageStreamBody, options?: 
 
 const handleExtractPdf = async (body: ExtractPdfBody, options?: GeminiHandlerOptions) => {
   if (!isNonEmptyString(body.base64Data)) return badRequest("PDF-data saknas.");
+  const text = await extractPdfTextFromBase64(body.base64Data, options);
+  return json({ text });
+};
 
-  const response = await callGeminiRest(
-    "gemini-2.5-flash",
-    {
-      contents: [
-        {
-          parts: [
-            {
-              text:
-                "Extrahera all text från detta dokument. Hantera olika sidorienteringar och layouter. Städa upp sidhuvuden, sidfötter och sidnummer så att resultatet blir en flytande text lämplig för en ljudbok eller podd. Returnera ENDAST texten."
-            },
-            {
-              inline_data: {
-                mime_type: "application/pdf",
-                data: body.base64Data,
-              }
-            }
-          ]
-        }
-      ]
-    },
-    options
-  );
+const handleExtractWebPage = async (body: ExtractWebPageBody, options?: GeminiHandlerOptions) => {
+  if (!isNonEmptyString(body.url) || !isHttpUrl(body.url)) {
+    return badRequest("Ogiltig länk.");
+  }
 
-  const text = extractGeneratedText(response);
+  let response: Response;
+  try {
+    response = await fetch(body.url, {
+      redirect: "follow",
+      headers: {
+        "accept": "text/html,application/pdf;q=0.9,*/*;q=0.8",
+        "accept-language": "sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7",
+        "user-agent": "Mozilla/5.0 (compatible; VoxPod/1.0; +https://voxpod.app)",
+      },
+    });
+  } catch {
+    throw new Error("Länken kunde inte laddas.");
+  }
+
+  if (!response.ok) {
+    throw new Error(`Länken kunde inte laddas (${response.status}).`);
+  }
+
+  const finalUrl = response.url || body.url;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (/application\/pdf/i.test(contentType) || /\.pdf(?:$|[?#])/i.test(finalUrl)) {
+    const text = await extractPdfTextFromBase64(
+      arrayBufferToBase64(await response.arrayBuffer()),
+      options
+    );
+    return json({ text });
+  }
+
+  const text = extractReadableHtmlText(await response.text());
   if (!text) {
-    throw new Error("PDF-filen gav ingen extraherbar text.");
+    throw new Error("Webbsidan gav ingen läsbar text.");
   }
 
   return json({ text });
@@ -433,36 +546,29 @@ const handleGenerateNotes = async (body: GenerateNotesBody, options?: GeminiHand
   const ai = getAiClient(options?.apiKey);
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Analysera följande text och returnera ENDAST giltig JSON utan markdown eller kodblock.
-
-Format:
-{
-  "title": "kort rubrik",
-  "summary": "5-8 meningar som hjälper en elev att snabbt minnas föreläsningen senare",
-  "sections": [
-    {
-      "heading": "tydlig studierubrik",
-      "bullets": ["punkt 1", "punkt 2", "punkt 3"]
-    }
-  ]
-}
+    contents: `Analysera följande text och skriv kunskapstäta studieanteckningar. Returnera ENDAST JSON som matchar schemat.
 
 Regler:
-- Skriv på samma språk som texten.
-- Skriv som välstrukturerade studieanteckningar för en elev som ska repetera en föreläsning i efterhand.
-- Sammanfattningen ska lyfta fram huvudidéer, slutsatser, samband och varför de är viktiga.
-- Skapa 2 till 4 sektioner beroende på materialets bredd.
-- Varje sektion ska innehålla 3 till 5 bullets.
-- Minst en sektion ska fånga viktiga detaljer, definitioner, exempel eller resonemang som hjälper vid repetition.
-- Varje bullet ska vara en hel mening eller en tydlig fras utan asterisker i texten.
-- Skriv tydliga, konkreta rubriker som passar innehållet.
-- Undvik generiska rubriker som "Sektion 1", "Del 1" eller "Punktlista".
-- Sammanfattningen ska kännas välskriven, informationsrik och lätt att skumma.
-- Ta med centrala begrepp, viktiga skillnader, orsak-verkan, steg eller exempel när texten innehåller sådant.
-- Returnera bara JSON.
+- Skriv på samma språk som källtexten.
+- Skriv för en elev som vill repetera innehållet snabbt men utan att viktig information går förlorad.
+- Sammanfattningen ska vara 6 till 10 meningar och kunna stå på egna ben.
+- Sammanfattningen ska fånga huvudidéer, slutsatser, samband, varför innehållet är viktigt och vad man bör minnas.
+- Skapa 3 till 5 sektioner när materialet räcker till det. Använd färre bara om texten faktiskt är smal.
+- Varje sektion ska innehålla 4 till 6 bullets med konkret information.
+- Varje bullet ska bära fakta, resonemang, definitioner, exempel, steg, jämförelser, orsaker eller konsekvenser. Undvik vaga bullets.
+- Bevara namn, årtal, siffror, centrala begrepp och viktiga skillnader när sådant finns i texten.
+- Om texten beskriver en process eller utveckling, återge ordningen tydligt.
+- Om texten innehåller tydliga delteman eller rubriker, använd dem eller förbättrade versioner av dem.
+- Rubriker ska vara informativa och lätta att skumma. Undvik generiska rubriker som "Sektion 1", "Del 1" eller "Punktlista".
+- Repetera inte samma information i flera bullets om det går att undvika, men offra inte viktig kunskap för att bli kort.
+- Ingen markdown. Inga kodblock. Bara JSON.
 
 TEXT:
 ${body.text}`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: NOTES_RESPONSE_SCHEMA,
+    },
   });
 
   return json({ notes: parseStructuredNotes(response.text || "") });
@@ -491,6 +597,8 @@ export const handleGeminiRequest = async (
         return await handleExtractImage(body as ExtractImageBody, options);
       case "extractPdf":
         return await handleExtractPdf(body as ExtractPdfBody, options);
+      case "extractWebPage":
+        return await handleExtractWebPage(body as ExtractWebPageBody, options);
       case "extractImageStream":
         return await handleExtractImageStream(body as ExtractImageStreamBody, options);
       case "extractPdfStream":

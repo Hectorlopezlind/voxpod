@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
-import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf } from './services/geminiService';
+import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf, extractWebPageText } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
 import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
@@ -81,13 +81,18 @@ const EN_TRANSLATIONS = {
   app_subtitle: 'AI Podcast Streamer',
   docs_btn: 'Upload document',
   docs_btn_hint: 'PDF, text or rich document',
-  camera_btn: 'Use camera',
-  camera_btn_hint: 'Scan one page right now',
+  camera_btn: 'Take photos',
+  camera_btn_hint: 'Open camera',
   images_btn: 'Upload images',
   images_btn_hint: 'Import a full image set',
+  link_btn: 'Import link',
+  link_btn_hint: 'Paste a webpage or PDF link',
+  link_placeholder: 'https://example.com/article',
+  link_import_btn: 'Import',
   scanning_pdf: 'Reading PDF...',
   scanning_camera: 'Reading camera scan...',
   scanning_images: 'Reading images...',
+  scanning_link: 'Reading link...',
   translating: 'Translating...',
   placeholder_text: 'Paste text, clean up an import, or write your own draft...',
   placeholder_notes: '',
@@ -175,6 +180,9 @@ const EN_TRANSLATIONS = {
   cloud_status_signed_out: 'Sign in to save audio privately and open it on any signed-in device.',
   cloud_status_setup_needed: 'Run the Supabase SQL setup before cloud sync can protect your files.',
   cloud_status_permission_error: 'Cloud sync is blocked by missing Supabase permissions or bucket rules.',
+  cloud_status_cancelled: 'Cloud sync was stopped. New audio will try to sync again automatically.',
+  cloud_status_timeout: 'Cloud sync timed out. Check the connection and try creating the audio again.',
+  cloud_cancel_btn: 'Stop sync',
   hero_kicker: 'Private AI Audio Workspace',
   hero_title: 'Turn documents, images and notes into a library that follows you between devices.',
   hero_body: 'Create podcasts from text, PDFs, camera scans and image batches. When you are signed in, the library can be tied to your Supabase account instead of only this browser.',
@@ -204,16 +212,31 @@ const EN_TRANSLATIONS = {
   document_import_failed: 'Document import failed.',
   document_import_partial_single: 'One document could not be imported: {name}. The rest of the batch was kept.',
   document_import_partial_multiple: '{count} documents could not be imported. The rest of the batch was kept.',
+  link_import_failed: 'Link import failed.',
+  link_invalid_error: 'Enter a valid http or https link.',
   translation_failed: 'Translation failed.',
   playback_failed: 'Playback failed.',
+  playback_chunk_waiting: 'The next audio part is still being created. Try play again in a moment.',
+  playback_chunk_missing: 'This audio part is missing or could not be downloaded. Recreate the podcast or try again after sync finishes.',
+  playback_stalled: 'Playback stalled. I paused the player so you can retry from the same spot.',
   delete_failed: 'Could not delete the episode.',
-  speech_cleanup_label: 'Skip OCR codes & lone numbers',
+  delete_episode_confirm_title: 'Delete file?',
+  delete_episode_confirm_body: 'Do you want to delete this file permanently?',
+  delete_episode_confirm_btn: 'Delete permanently',
+  speech_cleanup_label_on: 'Without codes',
+  speech_cleanup_label_off: 'With codes',
   speech_cleanup_hint: 'Cleans noisy OCR fragments before speech and keeps English titles natural inside Swedish text.',
+  speech_cleanup_on: 'Cleaning on',
+  speech_cleanup_off: 'Read exact text',
   speech_cleanup_tooltip_on: 'Skip OCR codes, lone numbers, and symbol noise during speech.',
   speech_cleanup_tooltip_off: 'Read imported OCR text exactly as it appears, including codes and lone numbers.',
   speech_cleanup_empty_error: 'Nothing readable remained after speech cleanup. Turn it off or edit the text first.',
   open_episode_title: 'Open episode',
   delete_episode_title: 'Delete episode',
+  edit_episode_btn: 'Edit',
+  episode_editor_title: 'Edit episode',
+  episode_title_label: 'Episode title',
+  save_episode_btn: 'Save changes',
   camera_modal_title: 'Camera capture',
   camera_modal_body: 'Take several photos first, then import them together.',
   camera_permission_error: 'Camera access failed. Allow camera access or use the native camera picker.',
@@ -224,6 +247,10 @@ const EN_TRANSLATIONS = {
   camera_shots_empty: 'No photos yet.',
   camera_starting: 'Starting camera...',
   camera_count_status: '{count} photos ready',
+  camera_pending_title: 'Camera photos',
+  camera_pending_hint: 'Each photo is saved right away. Take more, then press Done to import them together.',
+  camera_take_next_btn: 'Take another photo',
+  camera_done_btn: 'Done',
   layout_studio_title: 'Layout Studio',
   layout_studio_body: 'Compare four presentation shells. The active version is saved on this device.',
   layout_studio_current: 'Current layout',
@@ -236,13 +263,18 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   app_subtitle: 'Reproductor de podcasts con IA',
   docs_btn: 'Subir documento',
   docs_btn_hint: 'PDF, texto o documento enriquecido',
-  camera_btn: 'Usar cámara',
-  camera_btn_hint: 'Escanea una sola página ahora',
+  camera_btn: 'Tomar fotos',
+  camera_btn_hint: 'Abrir cámara',
   images_btn: 'Subir imágenes',
   images_btn_hint: 'Importa una serie completa de imágenes',
+  link_btn: 'Importar enlace',
+  link_btn_hint: 'Pega la URL de una web o un PDF',
+  link_placeholder: 'https://example.com/article',
+  link_import_btn: 'Importar',
   scanning_pdf: 'Leyendo PDF...',
   scanning_camera: 'Leyendo captura...',
   scanning_images: 'Leyendo imágenes...',
+  scanning_link: 'Leyendo enlace...',
   translating: 'Traduciendo...',
   placeholder_text: 'Pega texto, corrige una importación o escribe tu propio borrador...',
   placeholder_notes: '',
@@ -330,6 +362,9 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   cloud_status_signed_out: 'Inicia sesión para guardar audio de forma privada y abrirlo en cualquier dispositivo con tu sesión.',
   cloud_status_setup_needed: 'Ejecuta la configuración SQL de Supabase antes de usar la sincronización protegida.',
   cloud_status_permission_error: 'La sincronización en la nube está bloqueada por permisos o reglas del bucket de Supabase.',
+  cloud_status_cancelled: 'La sincronización en la nube se detuvo. El audio nuevo intentará sincronizarse otra vez automáticamente.',
+  cloud_status_timeout: 'La sincronización en la nube agotó el tiempo de espera. Revisa la conexión y vuelve a crear el audio.',
+  cloud_cancel_btn: 'Detener sync',
   hero_kicker: 'Espacio privado de audio con IA',
   hero_title: 'Convierte documentos, imágenes y notas en una biblioteca que te acompaña entre dispositivos.',
   hero_body: 'Crea podcasts desde texto, PDFs, capturas de cámara y lotes de imágenes. Cuando inicias sesión, la biblioteca puede vincularse a tu cuenta de Supabase en lugar de quedarse solo en este navegador.',
@@ -359,16 +394,31 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   document_import_failed: 'La importación del documento falló.',
   document_import_partial_single: 'No se pudo importar un documento: {name}. El resto del lote se conservó.',
   document_import_partial_multiple: 'No se pudieron importar {count} documentos. El resto del lote se conservó.',
+  link_import_failed: 'La importación del enlace falló.',
+  link_invalid_error: 'Introduce un enlace http o https válido.',
   translation_failed: 'La traducción falló.',
   playback_failed: 'La reproducción falló.',
+  playback_chunk_waiting: 'La siguiente parte de audio todavía se está creando. Vuelve a pulsar reproducir en un momento.',
+  playback_chunk_missing: 'Falta esta parte de audio o no se pudo descargar. Vuelve a crear el podcast o inténtalo cuando termine la sincronización.',
+  playback_stalled: 'La reproducción se detuvo. Pausé el reproductor para que puedas reintentar desde el mismo punto.',
   delete_failed: 'No se pudo borrar el episodio.',
-  speech_cleanup_label: 'Saltar códigos OCR y números sueltos',
+  delete_episode_confirm_title: '¿Borrar archivo?',
+  delete_episode_confirm_body: '¿Quieres borrar este archivo permanentemente?',
+  delete_episode_confirm_btn: 'Borrar permanentemente',
+  speech_cleanup_label_on: 'Sin códigos',
+  speech_cleanup_label_off: 'Con códigos',
   speech_cleanup_hint: 'Limpia fragmentos OCR ruidosos antes de leer y mantiene naturales los títulos en inglés dentro de texto sueco.',
+  speech_cleanup_on: 'Limpieza activa',
+  speech_cleanup_off: 'Leer texto exacto',
   speech_cleanup_tooltip_on: 'Omite códigos OCR, números sueltos y ruido de símbolos durante la lectura.',
   speech_cleanup_tooltip_off: 'Lee el texto OCR importado exactamente como aparece, incluidos códigos y números sueltos.',
   speech_cleanup_empty_error: 'No quedó texto legible después de limpiar la voz. Desactiva el filtro o edita el texto primero.',
   open_episode_title: 'Abrir episodio',
   delete_episode_title: 'Borrar episodio',
+  edit_episode_btn: 'Editar',
+  episode_editor_title: 'Editar episodio',
+  episode_title_label: 'Título del episodio',
+  save_episode_btn: 'Guardar cambios',
   camera_modal_title: 'Captura con cámara',
   camera_modal_body: 'Haz varias fotos primero y luego impórtalas juntas.',
   camera_permission_error: 'No se pudo acceder a la cámara. Permite el acceso o usa el selector nativo.',
@@ -379,6 +429,10 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   camera_shots_empty: 'Todavía no hay fotos.',
   camera_starting: 'Iniciando cámara...',
   camera_count_status: '{count} fotos listas',
+  camera_pending_title: 'Fotos de cámara',
+  camera_pending_hint: 'Cada foto se guarda al momento. Haz más y luego pulsa Listo para importarlas juntas.',
+  camera_take_next_btn: 'Tomar otra foto',
+  camera_done_btn: 'Listo',
   layout_studio_title: 'Estudio de diseño',
   layout_studio_body: 'Compara cuatro presentaciones. La versión activa se guarda en este dispositivo.',
   layout_studio_current: 'Diseño actual',
@@ -418,7 +472,7 @@ type GenerationSession = {
 
 type LibraryUpdater = (currentLibrary: PodcastEpisode[]) => PodcastEpisode[];
 
-type ImportSource = 'document' | 'camera' | 'images';
+type ImportSource = 'document' | 'camera' | 'images' | 'link';
 
 type ImportSessionState = {
   id: string;
@@ -507,12 +561,12 @@ const imageNameCollator = new Intl.Collator(undefined, {
 
 const INITIAL_PLAYBACK_BUFFER = 2;
 const MAX_CHUNK_CHARACTERS = 1800;
-const MAX_NOTES_SOURCE_CHARACTERS = 12000;
-const MAX_NOTE_SUMMARY_CHARACTERS = 640;
-const MAX_NOTE_SECTION_BULLETS = 5;
-const MAX_NOTE_SECTIONS = 3;
+const MAX_NOTES_SOURCE_CHARACTERS = 18000;
+const MAX_NOTE_SUMMARY_CHARACTERS = 960;
+const MAX_NOTE_SECTION_BULLETS = 6;
+const MAX_NOTE_SECTIONS = 4;
 const MAX_SUMMARY_AUDIO_CHARACTERS = 1800;
-const MAX_SUMMARY_AUDIO_BULLETS = 6;
+const MAX_SUMMARY_AUDIO_BULLETS = 8;
 const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
 const LIVE_GENERATION_EARLY_START_CHARACTERS = 900;
 const IMPORT_STREAM_FLUSH_CHARACTERS = 80;
@@ -524,9 +578,14 @@ const USER_LANGUAGE_STORAGE_KEY = 'voxpod_ui_language';
 const SPEECH_CLEANUP_STORAGE_KEY = 'voxpod_speech_cleanup';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
 const LIBRARY_PERSIST_DELAY_MS = 180;
+const CLOUD_UPLOAD_TIMEOUT_MS = 90_000;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 const CHUNK_POLL_INTERVAL_MS = 180;
+const CHUNK_LOAD_TIMEOUT_MS = 30_000;
+const CHUNK_PLAY_RETRY_DELAY_MS = 260;
+const MAX_CHUNK_PLAY_ATTEMPTS = 3;
+const PLAYBACK_STALL_TIMEOUT_MS = 12_000;
 const IMAGE_IMPORT_MAX_DIMENSION = 1800;
 const IMAGE_IMPORT_COMPRESSED_MIME = 'image/jpeg';
 const IMAGE_IMPORT_COMPRESSED_QUALITY = 0.82;
@@ -615,6 +674,21 @@ const sleep = (ms: number) =>
 const waitForNextPaint = () =>
   new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
 
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timeoutId: number | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+};
+
 const waitForBrowserOnline = async () => {
   if (typeof navigator === 'undefined' || navigator.onLine) {
     return;
@@ -665,6 +739,12 @@ const getEpisodeOffset = (episode: PodcastEpisode, chunkIndex: number) =>
   getEpisodeTimeline(episode)
     .slice(0, chunkIndex)
     .reduce((total, value) => total + value, 0);
+
+const getReadyChunkCount = (episode: PodcastEpisode) =>
+  typeof episode.readyChunkCount === 'number' ? episode.readyChunkCount : episode.chunkCount;
+
+const isEpisodeChunkReady = (episode: PodcastEpisode, chunkIndex: number) =>
+  chunkIndex < getReadyChunkCount(episode);
 
 const isEpisodeAtEnd = (episode: PodcastEpisode, chunkIndex: number, chunkTime: number) => {
   const timeline = getEpisodeTimeline(episode);
@@ -826,6 +906,19 @@ const buildImportCacheKey = (file: File) =>
     file.type || 'unknown'
   ].join(':');
 
+const normalizeImportUrl = (value: string) => {
+  const parsed = new URL(value.trim());
+  parsed.hash = '';
+  return parsed.toString();
+};
+
+const buildUrlImportCacheKey = (url: string) =>
+  [
+    'import-url',
+    IMPORT_TEXT_CACHE_VERSION,
+    normalizeImportUrl(url),
+  ].join(':');
+
 const composeImportedText = (baseText: string, importedText: string) => {
   const trimmedBaseText = baseText.replace(/\s+$/g, '');
   const trimmedImportedText = importedText.replace(/^\s+/g, '');
@@ -943,6 +1036,113 @@ const mergeGeneratedAndPersonalNotes = (
 
 const normalizeInlineText = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
+
+const BULLET_LINE_PATTERN = /^(?:[-*•]\s+|\d+[\).\s-]+)/;
+
+const isBulletLikeLine = (line: string) =>
+  BULLET_LINE_PATTERN.test(line);
+
+const looksLikeWrappedHeadingLine = (line: string) => {
+  const normalized = normalizeInlineText(line);
+  if (!normalized || normalized.length > 90) {
+    return false;
+  }
+
+  if (isBulletLikeLine(normalized) || /[.!?]$/.test(normalized)) {
+    return false;
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 9) {
+    return false;
+  }
+
+  if (/[:)]$/.test(normalized)) {
+    return true;
+  }
+
+  const titleCaseWords = words.filter(word => /^[A-ZÅÄÖÁÀÂÉÈÊÍÌÎÓÒÔÚÙÛÜÑ]/.test(word));
+  return titleCaseWords.length >= Math.max(2, Math.ceil(words.length * 0.6));
+};
+
+const joinReflowLines = (currentLine: string, nextLine: string) => {
+  if (
+    /[\p{L}\d]-$/u.test(currentLine) &&
+    /^[\p{L}\d]/u.test(nextLine)
+  ) {
+    return `${currentLine.slice(0, -1)}${nextLine}`;
+  }
+
+  return `${currentLine} ${nextLine}`;
+};
+
+const shouldJoinReflowLines = (currentLine: string, nextLine: string) => {
+  if (!currentLine || !nextLine) {
+    return false;
+  }
+
+  if (isBulletLikeLine(currentLine) || isBulletLikeLine(nextLine)) {
+    return false;
+  }
+
+  if (looksLikeWrappedHeadingLine(currentLine) || looksLikeWrappedHeadingLine(nextLine)) {
+    return false;
+  }
+
+  if (/[.!?]["')\]]?$/.test(currentLine)) {
+    return false;
+  }
+
+  if (/[:;]["')\]]?$/.test(currentLine)) {
+    return /^[a-zåäöáàâéèêíìîóòôúùûüñ(]/i.test(nextLine);
+  }
+
+  return true;
+};
+
+const reflowProcessedLines = (lines: string[]) => {
+  const paragraphs: string[] = [];
+  let currentParagraph = '';
+
+  const pushParagraph = () => {
+    const normalized = normalizeInlineText(currentParagraph);
+    if (normalized) {
+      paragraphs.push(normalized);
+    }
+    currentParagraph = '';
+  };
+
+  lines.forEach((line) => {
+    const normalizedLine = normalizeInlineText(line);
+    if (!normalizedLine) {
+      pushParagraph();
+      return;
+    }
+
+    if (!currentParagraph) {
+      currentParagraph = normalizedLine;
+      return;
+    }
+
+    if (shouldJoinReflowLines(currentParagraph, normalizedLine)) {
+      currentParagraph = joinReflowLines(currentParagraph, normalizedLine);
+      return;
+    }
+
+    pushParagraph();
+    currentParagraph = normalizedLine;
+  });
+
+  pushParagraph();
+  return paragraphs.join('\n\n').trim();
+};
+
+const buildReadableSourceText = (text: string) =>
+  reflowProcessedLines(
+    text
+      .split(/\r?\n/)
+      .map(normalizeInlineText)
+  );
 
 const SWEDISH_SPEECH_HINT_PATTERN = /[åäö]|\b(och|att|det|som|för|med|inte|är|ska|kan|till|från|har|vara|den|detta|dessa|också|finns|sker|själv|genom)\b/gi;
 const ENGLISH_SPEECH_HINT_PATTERN = /\b(the|and|with|from|into|about|lecture|lesson|title|chapter|summary|overview|research|study|learning|introduction|method|results)\b/gi;
@@ -1067,18 +1267,7 @@ const buildSpeechSourceText = (text: string, stripNoise: boolean) => {
     .split(/\r?\n/)
     .map(line => stripNoise ? stripNoiseFromSpeechLine(line) : normalizeInlineText(line));
 
-  const result: string[] = [];
-  normalizedLines.forEach((line) => {
-    if (!line) {
-      if (result.length > 0 && result[result.length - 1] !== '') {
-        result.push('');
-      }
-      return;
-    }
-    result.push(line);
-  });
-
-  return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return reflowProcessedLines(normalizedLines);
 };
 
 const looksLikeEnglishTitleLine = (line: string) => {
@@ -1169,7 +1358,7 @@ const tokenizeSummaryWords = (value: string) =>
     ?.filter(word => word.length > 3 && !SUMMARY_STOP_WORDS.has(word)) ?? [];
 
 const collectTextSentences = (text: string) =>
-  text
+  buildReadableSourceText(text)
     .split(/\n+/)
     .flatMap(paragraph => splitParagraphIntoSentences(paragraph))
     .map(sentence => normalizeInlineText(sentence))
@@ -1225,21 +1414,23 @@ const buildSummaryFallbackCore = (
   titleOverride?: string
 ): EpisodeNotes => {
   const labels = getNotesLabels(userLang);
+  const readableText = buildReadableSourceText(text);
   const firstLine = titleOverride
-    || text
+    || readableText
       .split(/\r?\n/)
       .map(line => line.trim())
       .find(Boolean)
     || labels.title;
-  const rankedSentences = selectSummarySentences(text, 8);
-  const summarySentences = rankedSentences.slice(0, 5);
+  const rankedSentences = selectSummarySentences(readableText, 12);
+  const summarySentences = rankedSentences.slice(0, 6);
   const highlightBullets = uniqueNoteBullets(rankedSentences.slice(0, 4), MAX_NOTE_SECTION_BULLETS);
+  const keyPointBullets = uniqueNoteBullets(rankedSentences.slice(4, 8), MAX_NOTE_SECTION_BULLETS);
   const detailBullets = uniqueNoteBullets(
-    rankedSentences.slice(4).concat(collectTextSentences(text).slice(0, 4)),
+    rankedSentences.slice(8).concat(collectTextSentences(readableText).slice(0, 6)),
     MAX_NOTE_SECTION_BULLETS
   );
   const summary = truncateText(summarySentences.join(' '), MAX_NOTE_SUMMARY_CHARACTERS)
-    || truncateText(text, MAX_NOTE_SUMMARY_CHARACTERS)
+    || truncateText(readableText, MAX_NOTE_SUMMARY_CHARACTERS)
     || labels.summary;
 
   return {
@@ -1250,6 +1441,12 @@ const buildSummaryFallbackCore = (
         heading: labels.highlights,
         bullets: highlightBullets.length > 0 ? highlightBullets : [finalizeNoteBullet(summary) || summary]
       },
+      ...(keyPointBullets.length > 0
+        ? [{
+            heading: labels.keyPoints,
+            bullets: keyPointBullets,
+          }]
+        : []),
       ...(detailBullets.length > 0
         ? [{
             heading: labels.details,
@@ -1349,14 +1546,20 @@ const normalizeEpisodeNotes = (
 };
 
 const buildNotesSourceText = (text: string) => {
-  const trimmed = text.trim();
+  const trimmed = buildReadableSourceText(text);
   if (trimmed.length <= MAX_NOTES_SOURCE_CHARACTERS) {
     return trimmed;
   }
 
-  const head = trimmed.slice(0, 8500).trim();
-  const tail = trimmed.slice(-2500).trim();
-  return `${head}\n\n[...]\n\n${tail}`;
+  const segmentLength = Math.max(2600, Math.floor(MAX_NOTES_SOURCE_CHARACTERS / 3));
+  const head = trimmed.slice(0, segmentLength).trim();
+  const middleStart = Math.max(0, Math.floor((trimmed.length - segmentLength) / 2));
+  const middle = trimmed.slice(middleStart, middleStart + segmentLength).trim();
+  const tail = trimmed.slice(-segmentLength).trim();
+
+  return [head, middle, tail]
+    .filter(Boolean)
+    .join('\n\n[...]\n\n');
 };
 
 const buildFallbackEpisodeNotes = (
@@ -1388,6 +1591,9 @@ const getSummaryAudioBlobId = (episode: PodcastEpisode) =>
 const normalizeCategoryName = (value: string) =>
   value.replace(/\s+/g, ' ').trim();
 
+const normalizeCategoryKey = (value: string) =>
+  normalizeCategoryName(value).toLocaleLowerCase();
+
 const parseCategoryInput = (value: string) => {
   const uniqueCategories = new Map<string, string>();
 
@@ -1396,7 +1602,7 @@ const parseCategoryInput = (value: string) => {
     .map(normalizeCategoryName)
     .filter(Boolean)
     .forEach((category) => {
-      const key = category.toLocaleLowerCase();
+      const key = normalizeCategoryKey(category);
       if (!uniqueCategories.has(key)) {
         uniqueCategories.set(key, category);
       }
@@ -1406,7 +1612,27 @@ const parseCategoryInput = (value: string) => {
 };
 
 const getEpisodeCategories = (episode: PodcastEpisode) =>
-  episode.categories ?? [];
+  parseCategoryInput((episode.categories ?? []).join(', '));
+
+const collectLibraryCategories = (episodes: PodcastEpisode[]) => {
+  const uniqueCategories = new Map<string, string>();
+
+  episodes.forEach((episode) => {
+    getEpisodeCategories(episode).forEach((category) => {
+      const key = normalizeCategoryKey(category);
+      if (!uniqueCategories.has(key)) {
+        uniqueCategories.set(key, category);
+      }
+    });
+  });
+
+  return Array.from(uniqueCategories.values()).sort((a, b) => imageNameCollator.compare(a, b));
+};
+
+const episodeMatchesCategory = (episode: PodcastEpisode, category: string) => {
+  const targetKey = normalizeCategoryKey(category);
+  return getEpisodeCategories(episode).some((candidate) => normalizeCategoryKey(candidate) === targetKey);
+};
 
 const sortLibraryEpisodes = (episodes: PodcastEpisode[], mode: LibrarySortMode) => {
   const nextEpisodes = [...episodes];
@@ -1522,6 +1748,16 @@ const getRequiredLiveReadyChunks = (
   return LIVE_GENERATION_MIN_READY_CHUNKS;
 };
 
+class ChunkLoadError extends Error {
+  markEpisodeFailed: boolean;
+
+  constructor(message: string, markEpisodeFailed: boolean) {
+    super(message);
+    this.name = 'ChunkLoadError';
+    this.markEpisodeFailed = markEpisodeFailed;
+  }
+}
+
 const App: React.FC = () => {
   const [userLang, setUserLang] = useState<SupportedLanguage>(() => {
     if (typeof window === 'undefined') {
@@ -1538,29 +1774,33 @@ const App: React.FC = () => {
   const [playbackRate, setRate] = useState(1.0);
   const [useSpeechCleanup, setUseSpeechCleanup] = useState(() => {
     if (typeof window === 'undefined') {
-      return true;
+      return false;
     }
 
-    return window.localStorage.getItem(SPEECH_CLEANUP_STORAGE_KEY) !== '0';
+    return window.localStorage.getItem(SPEECH_CLEANUP_STORAGE_KEY) === '1';
   });
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const [isDeletingEpisodeId, setIsDeletingEpisodeId] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [scanSource, setScanSource] = useState<'document' | 'camera' | 'images' | null>(null);
+  const [scanSource, setScanSource] = useState<ImportSource | null>(null);
   const [isLoadingChunk, setIsLoadingChunk] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
+  const [pendingDeleteEpisode, setPendingDeleteEpisode] = useState<PodcastEpisode | null>(null);
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [summaryTitleDraft, setSummaryTitleDraft] = useState('');
   const [summaryBodyDraft, setSummaryBodyDraft] = useState('');
   const [showSpeedControls, setShowSpeedControls] = useState(false);
-  const [editingCategoryEpisodeId, setEditingCategoryEpisodeId] = useState<string | null>(null);
+  const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
+  const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [categoryDraft, setCategoryDraft] = useState('');
+  const [linkImportUrl, setLinkImportUrl] = useState('');
   const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>('newest');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
   const [showAuthPanel, setShowAuthPanel] = useState(false);
@@ -1628,6 +1868,8 @@ const App: React.FC = () => {
   const libraryRef = useRef<PodcastEpisode[]>([]);
   const libraryPersistTimeoutRef = useRef<number | null>(null);
   const cloudSyncTimeoutRef = useRef<number | null>(null);
+  const cloudUploadRunRef = useRef(0);
+  const pendingCloudUploadsRef = useRef(0);
   const hasHydratedLibraryRef = useRef(false);
   const importSessionRef = useRef<ImportSessionState | null>(null);
   const liveGenerationRef = useRef<LiveGenerationState | null>(null);
@@ -1822,6 +2064,36 @@ const App: React.FC = () => {
     setSummaryBodyDraft(notes.summary);
   }, [showNotesModal?.id, showNotesModal?.notes, userLang]);
 
+  useEffect(() => {
+    if (!editingEpisodeId) {
+      setEpisodeTitleDraft('');
+      setCategoryDraft('');
+      return;
+    }
+
+    const episode = library.find((candidate) => candidate.id === editingEpisodeId);
+    if (!episode) {
+      setEditingEpisodeId(null);
+      setEpisodeTitleDraft('');
+      setCategoryDraft('');
+      return;
+    }
+
+    setEpisodeTitleDraft(episode.title);
+    setCategoryDraft(getEpisodeCategories(episode).join(', '));
+  }, [editingEpisodeId]);
+
+  useEffect(() => {
+    if (activeCategoryFilter === 'all') {
+      return;
+    }
+
+    const hasActiveCategory = library.some((episode) => episodeMatchesCategory(episode, activeCategoryFilter));
+    if (!hasActiveCategory) {
+      setActiveCategoryFilter('all');
+    }
+  }, [activeCategoryFilter, library]);
+
   // Keyboard jumping logic
   const handleLangKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -1975,6 +2247,25 @@ const App: React.FC = () => {
     }
   };
 
+  const readUrlImportCache = async (url: string) => {
+    try {
+      return await getImportTextCache(buildUrlImportCacheKey(url));
+    } catch (error) {
+      console.warn('Kunde inte läsa länkcache', error);
+      return null;
+    }
+  };
+
+  const writeUrlImportCache = async (url: string, text: string) => {
+    if (!text.trim()) return;
+
+    try {
+      await saveImportTextCache(buildUrlImportCacheKey(url), text);
+    } catch (error) {
+      console.warn('Kunde inte skriva länkcache', error);
+    }
+  };
+
   const setCloudFeedbackMessage = (feedback: AuthFeedback | null) => {
     setCloudFeedback(feedback);
   };
@@ -1999,10 +2290,51 @@ const App: React.FC = () => {
 
   const markCloudReady = () => {
     if (!authUser) return;
+    if (pendingCloudUploadsRef.current > 0) return;
+
     setIsCloudSyncing(false);
     setCloudFeedbackMessage({
       kind: 'success',
       message: t('cloud_status_ready'),
+    });
+  };
+
+  const beginCloudUpload = () => {
+    const userId = authUser?.id;
+    if (!userId) return null;
+
+    pendingCloudUploadsRef.current += 1;
+    markCloudSyncing();
+    return {
+      userId,
+      runId: cloudUploadRunRef.current,
+    };
+  };
+
+  const completeCloudUpload = (runId: number) => {
+    if (runId !== cloudUploadRunRef.current) return;
+
+    pendingCloudUploadsRef.current = Math.max(0, pendingCloudUploadsRef.current - 1);
+    if (pendingCloudUploadsRef.current === 0) {
+      markCloudReady();
+    }
+  };
+
+  const failCloudUpload = (runId: number, cloudError: unknown) => {
+    if (runId !== cloudUploadRunRef.current) return;
+
+    cloudUploadRunRef.current += 1;
+    pendingCloudUploadsRef.current = 0;
+    handleCloudSyncError(cloudError);
+  };
+
+  const cancelCloudSync = () => {
+    cloudUploadRunRef.current += 1;
+    pendingCloudUploadsRef.current = 0;
+    setIsCloudSyncing(false);
+    setCloudFeedbackMessage({
+      kind: 'info',
+      message: t('cloud_status_cancelled'),
     });
   };
 
@@ -2027,27 +2359,37 @@ const App: React.FC = () => {
   };
 
   const uploadEpisodeChunkToCloud = (audioBlobId: string, index: number, wavBuffer: ArrayBuffer) => {
-    const userId = authUser?.id;
-    if (!userId) return;
+    const upload = beginCloudUpload();
+    if (!upload) return;
 
-    markCloudSyncing();
-    void uploadCloudEpisodeChunk(userId, audioBlobId, index, wavBuffer)
+    void withTimeout(
+      uploadCloudEpisodeChunk(upload.userId, audioBlobId, index, wavBuffer),
+      CLOUD_UPLOAD_TIMEOUT_MS,
+      t('cloud_status_timeout')
+    )
       .then(() => {
-        markCloudReady();
+        completeCloudUpload(upload.runId);
       })
-      .catch(handleCloudSyncError);
+      .catch((cloudError) => {
+        failCloudUpload(upload.runId, cloudError);
+      });
   };
 
   const uploadSummaryToCloud = (audioBlobId: string, wavBuffer: ArrayBuffer) => {
-    const userId = authUser?.id;
-    if (!userId) return;
+    const upload = beginCloudUpload();
+    if (!upload) return;
 
-    markCloudSyncing();
-    void uploadCloudSummaryAudio(userId, audioBlobId, wavBuffer)
+    void withTimeout(
+      uploadCloudSummaryAudio(upload.userId, audioBlobId, wavBuffer),
+      CLOUD_UPLOAD_TIMEOUT_MS,
+      t('cloud_status_timeout')
+    )
       .then(() => {
-        markCloudReady();
+        completeCloudUpload(upload.runId);
       })
-      .catch(handleCloudSyncError);
+      .catch((cloudError) => {
+        failCloudUpload(upload.runId, cloudError);
+      });
   };
 
   const loadChunkFromLocalOrCloud = async (episode: PodcastEpisode, index: number) => {
@@ -2070,6 +2412,33 @@ const App: React.FC = () => {
     }
 
     return null;
+  };
+
+  const getLatestEpisodeSnapshot = (episode: PodcastEpisode) =>
+    libraryRef.current.find(candidate => candidate.id === episode.id) ?? episode;
+
+  const pauseForUnavailableChunk = (episode: PodcastEpisode, index: number, message: string, markFailed = false) => {
+    pauseAudio();
+    setMediaSessionPlaybackState(false);
+    setPlayer(prev => ({
+      ...prev,
+      isPlaying: false,
+      activeEpisode: prev.activeEpisode?.id === episode.id
+        ? {
+            ...prev.activeEpisode,
+            ...(markFailed ? { generationStatus: 'failed' as const } : {})
+          }
+        : prev.activeEpisode
+    }));
+
+    if (markFailed) {
+      patchEpisode(episode.id, {
+        generationStatus: 'failed',
+        readyChunkCount: Math.min(getReadyChunkCount(episode), index),
+      });
+    }
+
+    setError(message);
   };
 
   const startImportSession = (source: ImportSource) => {
@@ -2156,11 +2525,6 @@ const App: React.FC = () => {
 
   const applyChunkStartTime = async (timeInChunk: number) => {
     const el = initAudioElement();
-    if (timeInChunk <= 0) {
-      el.currentTime = 0;
-      return;
-    }
-
     if (el.readyState < 1) {
       await new Promise<void>(resolve => {
         const handleLoaded = () => {
@@ -2171,7 +2535,17 @@ const App: React.FC = () => {
       });
     }
 
-    el.currentTime = timeInChunk;
+    el.currentTime = Math.max(0, timeInChunk);
+
+    if (el.readyState < 2) {
+      await new Promise<void>(resolve => {
+        const handleCanPlay = () => {
+          resolve();
+        };
+
+        el.addEventListener('canplay', handleCanPlay, { once: true });
+      });
+    }
   };
 
   useEffect(() => {
@@ -2228,6 +2602,61 @@ const App: React.FC = () => {
   }, [player.activeEpisode, player.currentChunkIndex]);
 
   useEffect(() => {
+    const el = initAudioElement();
+    let lastObservedTime = el.currentTime || 0;
+    let lastProgressAt = Date.now();
+
+    const markProgress = () => {
+      const currentTime = el.currentTime || 0;
+      if (Math.abs(currentTime - lastObservedTime) > 0.05) {
+        lastObservedTime = currentTime;
+        lastProgressAt = Date.now();
+      }
+    };
+
+    const handleAudioError = () => {
+      if (!player.activeEpisode) return;
+      pauseForUnavailableChunk(
+        getLatestEpisodeSnapshot(player.activeEpisode),
+        player.currentChunkIndex,
+        t('playback_failed')
+      );
+    };
+
+    const watchdog = window.setInterval(() => {
+      if (!player.activeEpisode || el.paused || isLoadingChunk) {
+        lastObservedTime = el.currentTime || 0;
+        lastProgressAt = Date.now();
+        return;
+      }
+
+      markProgress();
+      if (Date.now() - lastProgressAt < PLAYBACK_STALL_TIMEOUT_MS) {
+        return;
+      }
+
+      pauseForUnavailableChunk(
+        getLatestEpisodeSnapshot(player.activeEpisode),
+        player.currentChunkIndex,
+        t('playback_stalled')
+      );
+    }, 1000);
+
+    el.addEventListener('timeupdate', markProgress);
+    el.addEventListener('playing', markProgress);
+    el.addEventListener('canplay', markProgress);
+    el.addEventListener('error', handleAudioError);
+
+    return () => {
+      window.clearInterval(watchdog);
+      el.removeEventListener('timeupdate', markProgress);
+      el.removeEventListener('playing', markProgress);
+      el.removeEventListener('canplay', markProgress);
+      el.removeEventListener('error', handleAudioError);
+    };
+  }, [player.activeEpisode, player.currentChunkIndex, isLoadingChunk, userLang]);
+
+  useEffect(() => {
     if (!isAuthReady) return;
 
     const cachedLibrary = readPersistedLibrary(authUser?.id);
@@ -2236,6 +2665,8 @@ const App: React.FC = () => {
     hasHydratedLibraryRef.current = true;
 
     if (!authUser || !supabase) {
+      cloudUploadRunRef.current += 1;
+      pendingCloudUploadsRef.current = 0;
       setIsCloudSyncing(false);
       setCloudFeedbackMessage(
         isSupabaseConfigured
@@ -2318,12 +2749,21 @@ const App: React.FC = () => {
     }
 
     cloudSyncTimeoutRef.current = window.setTimeout(() => {
+      const runId = cloudUploadRunRef.current;
       markCloudSyncing();
-      void upsertCloudEpisodes(authUser.id, libraryRef.current)
+      void withTimeout(
+        upsertCloudEpisodes(authUser.id, libraryRef.current),
+        CLOUD_UPLOAD_TIMEOUT_MS,
+        t('cloud_status_timeout')
+      )
         .then(() => {
+          if (runId !== cloudUploadRunRef.current) return;
           markCloudReady();
         })
-        .catch(handleCloudSyncError);
+        .catch((cloudError) => {
+          if (runId !== cloudUploadRunRef.current) return;
+          handleCloudSyncError(cloudError);
+        });
       cloudSyncTimeoutRef.current = null;
     }, 900);
 
@@ -2351,7 +2791,14 @@ const App: React.FC = () => {
     const el = initAudioElement();
     const handleEnd = () => {
       if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
-        void playChunk(player.activeEpisode, player.currentChunkIndex + 1);
+        const latestEpisode = getLatestEpisodeSnapshot(player.activeEpisode);
+        const nextIndex = player.currentChunkIndex + 1;
+        if (latestEpisode.generationStatus === 'processing' && !isEpisodeChunkReady(latestEpisode, nextIndex)) {
+          pauseForUnavailableChunk(latestEpisode, nextIndex, t('playback_chunk_waiting'));
+          return;
+        }
+
+        void playChunk(latestEpisode, nextIndex);
       } else {
         if (player.activeEpisode) {
           saveBookmark(player.activeEpisode.id, 0, 0);
@@ -2412,7 +2859,7 @@ const App: React.FC = () => {
     return chunks;
   };
 
-  const buildChunkAudio = async (textChunk: string) => {
+  const buildChunkAudio = async (textChunk: string, voice: VoiceName) => {
     const speechRequest = buildSpeechRequestText(textChunk, false);
     if (!speechRequest.speechText) {
       throw new Error(t('speech_cleanup_empty_error'));
@@ -2421,7 +2868,7 @@ const App: React.FC = () => {
     setRetryNotice(null);
     const base64 = await generateTTS(
       speechRequest.speechText,
-      selectedVoice as VoiceName,
+      voice,
       undefined,
       {
         ...makeRetryOptions(),
@@ -2525,7 +2972,7 @@ const App: React.FC = () => {
           }
 
           for (let index = live.generatedCount; index < requiredInitialReady; index++) {
-            const { wavBuffer, duration } = await buildChunkAudio(allChunks[index]);
+            const { wavBuffer, duration } = await buildChunkAudio(allChunks[index], live.voice);
             await saveAudioBlob(`${live.episodeId}_${index}`, wavBuffer);
             chunkCache.current.set(`${live.episodeId}_${index}`, wavBuffer);
             uploadEpisodeChunkToCloud(live.episodeId, index, wavBuffer);
@@ -2576,7 +3023,7 @@ const App: React.FC = () => {
 
         if (live.generatedCount < finalizedCount) {
           const nextIndex = live.generatedCount;
-          const { wavBuffer, duration } = await buildChunkAudio(allChunks[nextIndex]);
+          const { wavBuffer, duration } = await buildChunkAudio(allChunks[nextIndex], live.voice);
           await saveAudioBlob(`${live.episodeId}_${nextIndex}`, wavBuffer);
           chunkCache.current.set(`${live.episodeId}_${nextIndex}`, wavBuffer);
           uploadEpisodeChunkToCloud(live.episodeId, nextIndex, wavBuffer);
@@ -2641,6 +3088,15 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Live generation failed', error);
+      const live = liveGenerationRef.current;
+      if (live?.episodeCreated) {
+        patchEpisode(live.episodeId, {
+          generationStatus: 'failed',
+          readyChunkCount: live.generatedCount,
+          chunkDurations: [...live.generatedDurations],
+          duration: sumDurations(live.generatedDurations),
+        });
+      }
       setError(error instanceof Error && error.message ? error.message : 'Could not create the podcast from the imported stream.');
       liveGenerationRef.current = null;
       setIsGenerating(false);
@@ -2657,6 +3113,7 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setError(null);
     setRetryNotice(null);
+    let createdEpisodeId: string | null = null;
 
     try {
       const activeImportSession = importSessionRef.current;
@@ -2724,7 +3181,7 @@ const App: React.FC = () => {
       });
 
       for (let index = 0; index < initialBufferSize; index++) {
-        const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
+        const { wavBuffer, duration } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName);
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
         uploadEpisodeChunkToCloud(id, index, wavBuffer);
@@ -2751,10 +3208,11 @@ const App: React.FC = () => {
       };
 
       updateLibrary(prev => [newEpisode, ...prev]);
+      createdEpisodeId = id;
       await handlePlayEpisode(newEpisode, 0);
 
       for (let index = initialBufferSize; index < chunks.length; index++) {
-        const { wavBuffer, duration } = await buildChunkAudio(chunks[index]);
+        const { wavBuffer, duration } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName);
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
         uploadEpisodeChunkToCloud(id, index, wavBuffer);
@@ -2801,6 +3259,9 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
+      if (createdEpisodeId) {
+        patchEpisode(createdEpisodeId, { generationStatus: 'failed' });
+      }
       setError(err instanceof Error && err.message ? err.message : 'Could not start the podcast.');
     }
     finally {
@@ -2815,6 +3276,10 @@ const App: React.FC = () => {
 
   const handleDownloadEpisode = async (episode: PodcastEpisode) => {
     if (isDownloading || episode.generationStatus === 'processing') return;
+    if (episode.generationStatus === 'failed') {
+      setError(t('playback_chunk_missing'));
+      return;
+    }
     setIsDownloading(episode.id);
     try {
       const buffers: ArrayBuffer[] = [];
@@ -2931,10 +3396,25 @@ const App: React.FC = () => {
   };
 
   const waitForChunkData = async (episode: PodcastEpisode, index: number, requestId: number) => {
+    const startedAt = Date.now();
+
     while (requestId === playRequestRef.current) {
-      const data = await loadChunkFromLocalOrCloud(episode, index);
+      const latestEpisode = getLatestEpisodeSnapshot(episode);
+      if (latestEpisode.generationStatus === 'failed') {
+        throw new ChunkLoadError(t('playback_chunk_missing'), true);
+      }
+
+      const data = await loadChunkFromLocalOrCloud(latestEpisode, index);
       if (data) {
         return data;
+      }
+
+      if (Date.now() - startedAt >= CHUNK_LOAD_TIMEOUT_MS) {
+        const isStillGenerating = latestEpisode.generationStatus === 'processing' && !isEpisodeChunkReady(latestEpisode, index);
+        throw new ChunkLoadError(
+          isStillGenerating ? t('playback_chunk_waiting') : t('playback_chunk_missing'),
+          !isStillGenerating
+        );
       }
 
       await sleep(CHUNK_POLL_INTERVAL_MS);
@@ -2951,6 +3431,7 @@ const App: React.FC = () => {
     const requestId = ++playRequestRef.current;
     const autoplay = options?.autoplay ?? true;
     const startTime = options?.startTime ?? 0;
+    const episodeRate = episode.playbackRate || 1;
 
     try {
       setIsLoadingChunk(true);
@@ -2959,16 +3440,25 @@ const App: React.FC = () => {
         return;
       }
 
-      loadAudioFromBuffer(data);
-      await applyChunkStartTime(startTime);
+      for (let attempt = 1; attempt <= MAX_CHUNK_PLAY_ATTEMPTS; attempt++) {
+        loadAudioFromBuffer(data);
+        await applyChunkStartTime(startTime);
+        setPlaybackRate(episodeRate);
 
-      const episodeRate = episode.playbackRate || 1;
-      setPlaybackRate(episodeRate);
+        try {
+          if (autoplay) {
+            await playAudio();
+          } else {
+            pauseAudio();
+          }
+          break;
+        } catch (playError) {
+          if (!autoplay || attempt >= MAX_CHUNK_PLAY_ATTEMPTS || requestId !== playRequestRef.current) {
+            throw playError;
+          }
 
-      if (autoplay) {
-        await playAudio();
-      } else {
-        pauseAudio();
+          await sleep(CHUNK_PLAY_RETRY_DELAY_MS * attempt);
+        }
       }
 
       if (requestId !== playRequestRef.current) {
@@ -3005,7 +3495,19 @@ const App: React.FC = () => {
       }
     } catch (e) { 
       console.error('Chunk playback failed', e);
-      setError(t('playback_failed')); 
+      if (e instanceof ChunkLoadError) {
+        pauseForUnavailableChunk(
+          getLatestEpisodeSnapshot(episode),
+          index,
+          e.message,
+          e.markEpisodeFailed
+        );
+      } else {
+        pauseAudio();
+        setMediaSessionPlaybackState(false);
+        setPlayer(prev => ({ ...prev, isPlaying: false }));
+        setError(t('playback_failed'));
+      }
     } finally {
       if (requestId === playRequestRef.current) {
         setIsLoadingChunk(false);
@@ -3186,6 +3688,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteEpisode = async (episode: PodcastEpisode) => {
+    setIsDeletingEpisodeId(episode.id);
     try {
       if (authUser?.id) {
         markCloudSyncing();
@@ -3231,13 +3734,16 @@ const App: React.FC = () => {
         setShowNotesModal(null);
       }
 
-      if (editingCategoryEpisodeId === episode.id) {
-        closeCategoryEditor();
+      if (editingEpisodeId === episode.id) {
+        closeEpisodeEditor();
       }
 
       updateLibrary(prev => prev.filter(x => x.id !== episode.id));
+      setPendingDeleteEpisode((current) => current?.id === episode.id ? null : current);
     } catch (err) {
       setError('Could not delete the episode.');
+    } finally {
+      setIsDeletingEpisodeId(null);
     }
   };
 
@@ -3576,10 +4082,6 @@ const App: React.FC = () => {
     }));
 
     setCameraShots((currentShots) => [...currentShots, ...nextShots]);
-    setCameraError(null);
-    if (!showCameraCapture) {
-      setShowCameraCapture(true);
-    }
   };
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3600,22 +4102,82 @@ const App: React.FC = () => {
     });
   };
 
-  const openCameraCapture = () => {
-    revokeCameraShotPreviews(cameraShots);
-    setCameraShots([]);
-    setCameraError(null);
+  const handleLinkImport = async () => {
+    if (isInputLocked) {
+      return;
+    }
+
+    const rawUrl = linkImportUrl.trim();
+    if (!rawUrl) {
+      return;
+    }
+
+    let normalizedUrl: string;
+    try {
+      normalizedUrl = normalizeImportUrl(rawUrl);
+    } catch {
+      setError(t('link_invalid_error'));
+      return;
+    }
+
     setError(null);
+    setRetryNotice(null);
+    setScanSource('link');
+    setScanSession({
+      startedAt: Date.now(),
+      totalItems: 1,
+      completedItems: 0,
+      estimatedSeconds: 8,
+    });
+    await waitForNextPaint();
+
+    const importSession = startImportSession('link');
+
+    try {
+      const cachedText = await readUrlImportCache(normalizedUrl);
+      const extractedText = cachedText?.trim()
+        ? cachedText
+        : await extractWebPageText(normalizedUrl, makeRetryOptions());
+
+      replaceImportSessionText(importSession.id, extractedText);
+      completeImportSession(importSession.id);
+      await writeUrlImportCache(normalizedUrl, extractedText);
+      setScanSession(prev => prev ? { ...prev, completedItems: 1 } : prev);
+      setLinkImportUrl('');
+      setRetryNotice(null);
+    } catch (error) {
+      console.error('Link import failed', error);
+      setError(error instanceof Error && error.message ? error.message : t('link_import_failed'));
+      completeImportSession(importSession.id);
+    } finally {
+      setScanSource(null);
+      setScanSession(null);
+      setRetryNotice(null);
+    }
+  };
+
+  const openCameraCapture = () => {
+    if (isBusy || isCameraImporting) {
+      return;
+    }
+
+    setError(null);
+    setCameraError(null);
     setShowCameraCapture(true);
   };
 
-  const closeCameraCapture = () => {
+  const hideCameraCapture = () => {
     stopCameraStream();
-    revokeCameraShotPreviews(cameraShots);
-    setCameraShots([]);
     setCameraError(null);
     setIsCameraBooting(false);
-    setIsCameraImporting(false);
     setShowCameraCapture(false);
+  };
+
+  const closeCameraCapture = () => {
+    hideCameraCapture();
+    revokeCameraShotPreviews(cameraShots);
+    setCameraShots([]);
+    setIsCameraImporting(false);
   };
 
   const handleOpenNativeCamera = () => {
@@ -3679,17 +4241,15 @@ const App: React.FC = () => {
       return;
     }
 
-    const shotsToImport = cameraShots;
-    stopCameraStream();
+    const shotsToImport = [...cameraShots];
     setIsCameraImporting(true);
-    setShowCameraCapture(false);
-    setCameraShots([]);
-    setCameraError(null);
+    hideCameraCapture();
 
     try {
       await processImages(shotsToImport.map((shot) => shot.file), () => {}, 'camera');
     } finally {
       revokeCameraShotPreviews(shotsToImport);
+      setCameraShots([]);
       setIsCameraImporting(false);
     }
   };
@@ -3845,7 +4405,9 @@ const App: React.FC = () => {
           ? t('scanning_camera')
           : scanSource === 'images'
             ? t('scanning_images')
-            : t('scanning_pdf'),
+            : scanSource === 'link'
+              ? t('scanning_link')
+              : t('scanning_pdf'),
         remainingSeconds: Math.max(0, scanSession.estimatedSeconds * (1 - progress)),
         progress,
       };
@@ -3880,17 +4442,15 @@ const App: React.FC = () => {
   const notesLabels = getNotesLabels(userLang);
   const authStatusEmail = authUser?.email || authSession?.user?.email || authEmail.trim();
   const isAuthSubmitDisabled = isAuthLoading || !authEmail.trim() || !authPassword.trim();
-  const libraryCategories = Array.from<string>(
-    new Set(library.flatMap(episode => getEpisodeCategories(episode)))
-  ).sort((a, b) => imageNameCollator.compare(a, b));
+  const libraryCategories = collectLibraryCategories(library);
   const displayedLibrary = sortLibraryEpisodes(
     library.filter(episode =>
-      activeCategoryFilter === 'all' || getEpisodeCategories(episode).includes(activeCategoryFilter)
+      activeCategoryFilter === 'all' || episodeMatchesCategory(episode, activeCategoryFilter)
     ),
     librarySortMode
   );
-  const categoryEditorEpisode = editingCategoryEpisodeId
-    ? library.find(episode => episode.id === editingCategoryEpisodeId) ?? null
+  const editingEpisode = editingEpisodeId
+    ? library.find(episode => episode.id === editingEpisodeId) ?? null
     : null;
   const cloudFeedbackTone = cloudFeedback?.kind === 'error'
     ? 'border-red-200 bg-red-50 text-red-700'
@@ -3905,8 +4465,10 @@ const App: React.FC = () => {
   const speechCleanupTooltip = useSpeechCleanup
     ? t('speech_cleanup_tooltip_on')
     : t('speech_cleanup_tooltip_off');
+  const speechCleanupButtonLabel = useSpeechCleanup
+    ? t('speech_cleanup_label_on')
+    : t('speech_cleanup_label_off');
   const cameraCountStatus = formatTemplate(t('camera_count_status'), { count: cameraShots.length });
-  const cameraUsePhotosLabel = formatTemplate(t('camera_use_photos_btn'), { count: cameraShots.length });
   const selectedVoiceLabel = PREMIUM_VOICES.find((voice) => voice.name === selectedVoice)?.label ?? selectedVoice;
   const librarySortLabel = librarySortMode === 'oldest'
     ? t('sort_oldest')
@@ -3924,22 +4486,25 @@ const App: React.FC = () => {
   const libraryItemIdleClass = 'bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(232,226,246,0.96))] border-[#d8d0ed] text-zinc-900 shadow-[0_26px_64px_-46px_rgba(32,15,93,0.28)] backdrop-blur';
   const libraryItemActiveClass = 'bg-gradient-to-br from-[#391BA6] via-[#30168C] to-[#7763BE] text-white border-transparent shadow-[0_24px_60px_-36px_rgba(57,27,166,0.34)]';
 
-  const openCategoryEditor = (episode: PodcastEpisode) => {
-    setEditingCategoryEpisodeId(episode.id);
+  const openEpisodeEditor = (episode: PodcastEpisode) => {
+    setEditingEpisodeId(episode.id);
+    setEpisodeTitleDraft(episode.title);
     setCategoryDraft(getEpisodeCategories(episode).join(', '));
   };
 
-  const closeCategoryEditor = () => {
-    setEditingCategoryEpisodeId(null);
+  const closeEpisodeEditor = () => {
+    setEditingEpisodeId(null);
+    setEpisodeTitleDraft('');
     setCategoryDraft('');
   };
 
-  const saveEpisodeCategories = () => {
-    if (!editingCategoryEpisodeId) return;
-    patchEpisode(editingCategoryEpisodeId, {
+  const saveEpisodeEdits = () => {
+    if (!editingEpisode) return;
+    patchEpisode(editingEpisode.id, {
+      title: truncateText(episodeTitleDraft, 70) || editingEpisode.title,
       categories: parseCategoryInput(categoryDraft),
     });
-    closeCategoryEditor();
+    closeEpisodeEditor();
   };
 
   const saveSummaryEdits = () => {
@@ -4076,30 +4641,158 @@ const App: React.FC = () => {
                 disabled={isInputLocked}
                 title={t('docs_btn_hint')}
                 aria-label={t('docs_btn_hint')}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                className="flex min-w-0 h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'document' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('docs_btn')}
+                {scanSource === 'document' ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                    <path d="M8 4h6l4 4v12H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                    <path d="M14 4v4h4" />
+                    <path d="M9 13h6" />
+                    <path d="M9 17h6" />
+                  </svg>
+                )}
+                <span>{t('docs_btn')}</span>
               </button>
               <button
                 onClick={openCameraCapture}
                 disabled={isInputLocked}
                 title={t('camera_btn_hint')}
                 aria-label={t('camera_btn_hint')}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                className="flex min-w-0 h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'camera' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('camera_btn')}
+                {scanSource === 'camera' ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                    <path d="M5 8h3l1.4-2h5.2L16 8h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" />
+                    <circle cx="12" cy="13" r="3.2" />
+                  </svg>
+                )}
+                <span>{t('camera_btn')}</span>
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isInputLocked}
                 title={t('images_btn_hint')}
                 aria-label={t('images_btn_hint')}
-                className="flex min-w-0 h-12 items-center justify-center gap-1.5 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
+                className="flex min-w-0 h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-800 shadow-[0_16px_30px_-24px_rgba(32,15,93,0.18)] transition-all hover:bg-[#f7f4fc] active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400"
               >
-                {scanSource === 'images' ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" /> : t('images_btn')}
+                {scanSource === 'images' ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-[#391BA6]" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                    <rect x="4" y="5" width="16" height="14" rx="2" />
+                    <path d="m7 15 3-3 3 2 4-4 2 2" />
+                    <circle cx="9" cy="9" r="1.2" />
+                  </svg>
+                )}
+                <span>{t('images_btn')}</span>
               </button>
               </div>
+
+              <div className="mt-2.5 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <label htmlFor="link-import" className="sr-only">{t('link_btn_hint')}</label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-zinc-400">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                      <path d="M10 14 7 17a3 3 0 1 1-4-4l3-3a3 3 0 0 1 4 0" />
+                      <path d="m14 10 3-3a3 3 0 1 1 4 4l-3 3a3 3 0 0 1-4 0" />
+                      <path d="m8 16 8-8" />
+                    </svg>
+                  </span>
+                  <input
+                    id="link-import"
+                    name="link-import"
+                    value={linkImportUrl}
+                    onChange={(event) => setLinkImportUrl(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void handleLinkImport();
+                      }
+                    }}
+                    disabled={isInputLocked}
+                    placeholder={t('link_placeholder')}
+                    aria-label={t('link_btn_hint')}
+                    className="w-full rounded-2xl border border-[#d8d0ed] bg-white py-3 pl-11 pr-4 text-sm font-semibold text-zinc-900 outline-none shadow-[0_12px_28px_-22px_rgba(32,15,93,0.18)] focus:ring-2 focus:ring-[#7763BE]/22 disabled:bg-zinc-100 disabled:text-zinc-400"
+                  />
+                </div>
+                <button
+                  onClick={() => { void handleLinkImport(); }}
+                  disabled={isInputLocked || !linkImportUrl.trim()}
+                  title={t('link_btn_hint')}
+                  aria-label={t('link_btn_hint')}
+                  className={classNames('min-h-[50px] rounded-2xl px-4 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-all active:scale-[0.98] disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
+                >
+                  {scanSource === 'link' ? t('loading_text') : t('link_import_btn')}
+                </button>
+              </div>
             </div>
+
+            {(cameraShots.length > 0 || isCameraImporting) && (
+              <div className="space-y-3 rounded-3xl border border-[#d8d0ed] bg-white/92 p-4 shadow-[0_18px_36px_-34px_rgba(32,15,93,0.18)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={subtleLabelClass}>{t('camera_pending_title')}</p>
+                    <p className="mt-1 text-sm font-black text-zinc-900">{cameraCountStatus}</p>
+                    <p className="mt-1 max-w-xl text-xs leading-relaxed text-zinc-500">{t('camera_pending_hint')}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={openCameraCapture}
+                      disabled={isCameraImporting}
+                      title={t('camera_take_next_btn')}
+                      aria-label={t('camera_take_next_btn')}
+                      className={classNames('rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] transition-all active:scale-[0.98]', darkButtonClass)}
+                    >
+                      {t('camera_take_next_btn')}
+                    </button>
+                    <button
+                      onClick={closeCameraCapture}
+                      disabled={isCameraImporting}
+                      title={t('cancel_btn')}
+                      aria-label={t('cancel_btn')}
+                      className={classNames('rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] transition-all active:scale-[0.98] disabled:bg-zinc-100 disabled:text-zinc-400', darkButtonClass)}
+                    >
+                      {t('cancel_btn')}
+                    </button>
+                    <button
+                      onClick={() => { void handleImportCameraShots(); }}
+                      disabled={cameraShots.length === 0 || isCameraImporting}
+                      title={t('camera_done_btn')}
+                      aria-label={t('camera_done_btn')}
+                      className={classNames('rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-all active:scale-[0.98] disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
+                    >
+                      {isCameraImporting ? t('loading_text') : t('camera_done_btn')}
+                    </button>
+                  </div>
+                </div>
+
+                {cameraShots.length > 0 && (
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {cameraShots.map((shot, index) => (
+                      <div key={shot.id} className="relative w-24 shrink-0 overflow-hidden rounded-[1.3rem] border border-[#d8d0ed] bg-[#f8f6fc]">
+                        <img src={shot.previewUrl} alt="" className="h-24 w-full object-cover" />
+                        <div className="flex items-center justify-between px-2.5 py-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">#{index + 1}</span>
+                          <button
+                            onClick={() => removeCameraShot(shot.id)}
+                            disabled={isCameraImporting}
+                            title={t('camera_remove_photo_btn')}
+                            aria-label={t('camera_remove_photo_btn')}
+                            className="text-[10px] font-black text-[#391BA6] disabled:text-zinc-400"
+                          >
+                            {t('camera_remove_photo_btn')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="overflow-hidden rounded-3xl border border-[#d8d0ed] bg-white/96">
               <label htmlFor="podcast-text" className="sr-only">{t('placeholder_text')}</label>
@@ -4185,19 +4878,19 @@ const App: React.FC = () => {
                   aria-label={speechCleanupTooltip}
                   title={speechCleanupTooltip}
                   className={classNames(
-                    'inline-flex h-11 w-11 items-center justify-center rounded-2xl border shadow-[0_16px_30px_-24px_rgba(32,15,93,0.16)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/30',
+                    'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-[10px] font-bold shadow-[0_14px_28px_-24px_rgba(32,15,93,0.16)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/30',
                     useSpeechCleanup
                       ? 'border-[#cfc5ea] bg-[#eee9f8] text-[#391BA6] hover:bg-[#e8e0fa]'
                       : 'border-[#d8d0ed] bg-white text-zinc-500 hover:bg-[#f7f4fc] hover:text-zinc-800'
                   )}
                 >
-                  <span className="sr-only">{speechCleanupTooltip}</span>
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.8]" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]" aria-hidden="true">
                     <path d="M4 6h16" />
                     <path d="M7 12h10" />
                     <path d="M10 18h4" />
                     {useSpeechCleanup && <path d="m5 5 14 14" />}
                   </svg>
+                  <span>{speechCleanupButtonLabel}</span>
                 </button>
               </div>
             </div>
@@ -4374,7 +5067,7 @@ const App: React.FC = () => {
                   title={category}
                   aria-label={category}
                   className={`shrink-0 rounded-full px-3 py-2 text-[11px] font-black transition-colors ${
-                    activeCategoryFilter === category
+                    normalizeCategoryKey(activeCategoryFilter) === normalizeCategoryKey(category)
                       ? 'bg-[#391BA6] text-white'
                       : 'border border-[#d8d0ed] bg-white text-zinc-800'
                   }`}
@@ -4410,10 +5103,36 @@ const App: React.FC = () => {
                   title={`${t('open_episode_title')}: ${ep.title}`}
                   aria-label={`${t('open_episode_title')}: ${ep.title}`}
                   className={classNames(
-                    'w-full min-w-0 cursor-pointer rounded-[2rem] border p-4 transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/35 sm:p-5',
+                    'relative w-full min-w-0 cursor-pointer rounded-[2rem] border p-4 transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7763BE]/35 sm:p-5',
                     isActiveEpisode ? libraryItemActiveClass : libraryItemIdleClass
                   )}
                 >
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setPendingDeleteEpisode(ep);
+                    }}
+                    disabled={isDeletingEpisodeId === ep.id}
+                    title={t('delete_episode_title')}
+                    aria-label={t('delete_episode_title')}
+                    className={classNames(
+                      'absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      isActiveEpisode
+                        ? 'border-white/12 bg-white/8 text-white/86 hover:bg-white/16'
+                        : 'border-[#d8d0ed] bg-white/96 text-slate-500 hover:bg-[#f7f4fc] hover:text-slate-900'
+                    )}
+                  >
+                    {isDeletingEpisodeId === ep.id ? (
+                      <div className="h-3.5 w-3.5 rounded-full border-2 border-current/25 border-t-current animate-spin" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                        <path d="M5 7h14" />
+                        <path d="M9 7V5h6v2" />
+                        <path d="m8 10 1 8h6l1-8" />
+                      </svg>
+                    )}
+                  </button>
+
                   <div className="flex items-start gap-3">
                     <div className={classNames(
                       'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
@@ -4429,12 +5148,9 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="min-w-0 flex-1 text-left">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3 pr-12">
                         <div className="min-w-0">
-                          <p className={classNames('text-[9px] font-black uppercase tracking-[0.18em]', isActiveEpisode ? 'text-white/72' : 'text-slate-500')}>
-                            {ep.generationStatus === 'processing' ? t('creating_podcast') : t('ai_voice_mode')}
-                          </p>
-                          <h3 className="mt-1 truncate text-[15px] font-black tracking-tight">{ep.title}</h3>
+                          <h3 className="truncate text-[15px] font-black tracking-tight">{ep.title}</h3>
                         </div>
                         <span className={classNames(
                           'shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black',
@@ -4466,28 +5182,28 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-end gap-2">
+                  <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1">
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
-                        openCategoryEditor(ep);
+                        openEpisodeEditor(ep);
                       }}
-                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
-                      title={t('edit_categories_btn')}
-                      aria-label={t('edit_categories_btn')}
+                      className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
+                      title={t('edit_episode_btn')}
+                      aria-label={t('edit_episode_btn')}
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                        <path d="m9 7 1.5-2h9L18 8" />
-                        <path d="M5 9h13l-1 8H6L5 9Z" />
-                        <path d="M5 12H3" />
+                        <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                        <path d="m12 6 4 4" />
                       </svg>
+                      <span>{t('edit_episode_btn')}</span>
                     </button>
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
                         void handlePlaySummary(ep);
                       }}
-                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
+                      className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
                       title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
                       aria-label={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
                     >
@@ -4504,6 +5220,7 @@ const App: React.FC = () => {
                           <path d="M21 11v2" />
                         </svg>
                       )}
+                      <span>{summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}</span>
                     </button>
                     {ep.notes && (
                       <button
@@ -4511,7 +5228,7 @@ const App: React.FC = () => {
                           event.stopPropagation();
                           setShowNotesModal(ep);
                         }}
-                        className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors', libraryActionClass)}
+                        className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
                         title={t('notes_title')}
                         aria-label={t('notes_title')}
                       >
@@ -4520,6 +5237,7 @@ const App: React.FC = () => {
                           <path d="M9 9h6" />
                           <path d="M9 12h6" />
                         </svg>
+                        <span>{t('notes_title')}</span>
                       </button>
                     )}
                     <button
@@ -4527,8 +5245,8 @@ const App: React.FC = () => {
                         event.stopPropagation();
                         handleDownloadEpisode(ep);
                       }}
-                      disabled={ep.generationStatus === 'processing'}
-                      className={classNames('flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-40', libraryActionClass)}
+                      disabled={ep.generationStatus === 'processing' || ep.generationStatus === 'failed'}
+                      className={classNames('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-colors disabled:cursor-not-allowed disabled:opacity-40', libraryActionClass)}
                       title={t('download_mp3_title')}
                       aria-label={t('download_mp3_title')}
                     >
@@ -4541,26 +5259,6 @@ const App: React.FC = () => {
                           <path d="M5 19h14" />
                         </svg>
                       )}
-                    </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleDeleteEpisode(ep);
-                      }}
-                      title={t('delete_episode_title')}
-                      aria-label={t('delete_episode_title')}
-                      className={classNames(
-                        'flex h-9 w-9 items-center justify-center rounded-2xl border transition-colors',
-                        isActiveEpisode
-                          ? 'border-white/12 bg-white/8 text-white/86 hover:bg-white/16'
-                          : 'border-[#d8d0ed] bg-white/96 text-slate-500 hover:bg-[#f7f4fc] hover:text-slate-900'
-                      )}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                        <path d="M5 7h14" />
-                        <path d="M9 7V5h6v2" />
-                        <path d="m8 10 1 8h6l1-8" />
-                      </svg>
                     </button>
                   </div>
                 </div>
@@ -4617,7 +5315,20 @@ const App: React.FC = () => {
 
                 {cloudFeedback && (
                   <div role="status" aria-live="polite" className={`rounded-2xl border px-4 py-3 text-xs font-bold ${cloudFeedbackTone}`}>
-                    {isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}
+                    <div className="flex items-center justify-between gap-3">
+                      <span>{isCloudSyncing ? t('cloud_status_syncing') : cloudFeedback.message}</span>
+                      {isCloudSyncing && (
+                        <button
+                          type="button"
+                          onClick={cancelCloudSync}
+                          className="shrink-0 rounded-full border border-current/20 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition-colors hover:bg-white/60"
+                          title={t('cloud_cancel_btn')}
+                          aria-label={t('cloud_cancel_btn')}
+                        >
+                          {t('cloud_cancel_btn')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -4814,18 +5525,8 @@ const App: React.FC = () => {
                         title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
                         aria-label={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
                       >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                          <path d="M12 4v3" />
-                          <path d="M12 17v3" />
-                          <path d="M4 12h3" />
-                          <path d="M17 12h3" />
-                          <path d="m6.5 6.5 2.1 2.1" />
-                          <path d="m15.4 15.4 2.1 2.1" />
-                          <path d="m17.5 6.5-2.1 2.1" />
-                          <path d="m8.6 15.4-2.1 2.1" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                        <span>{playbackRate.toFixed(1)}x</span>
+                        <span>{t('speed_label')} {playbackRate.toFixed(1)}x</span>
+                        <span aria-hidden="true">{showSpeedControls ? '▴' : '▾'}</span>
                       </button>
 
                       <button
@@ -4838,6 +5539,25 @@ const App: React.FC = () => {
                           <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
                         </svg>
                         <span>{t('add_bookmark_btn')}</span>
+                      </button>
+
+                      <button
+                        onClick={() => { if (player.activeEpisode) void handleDownloadEpisode(player.activeEpisode); }}
+                        disabled={isDownloading === player.activeEpisode.id || player.activeEpisode.generationStatus === 'processing' || player.activeEpisode.generationStatus === 'failed'}
+                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black disabled:cursor-not-allowed disabled:opacity-50', darkButtonClass)}
+                        title={t('download_mp3_title')}
+                        aria-label={t('download_mp3_title')}
+                      >
+                        {isDownloading === player.activeEpisode.id ? (
+                          <div className="h-3.5 w-3.5 rounded-full border-2 border-current/25 border-t-current animate-spin" />
+                        ) : (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                            <path d="M12 4v10" />
+                            <path d="m8 10 4 4 4-4" />
+                            <path d="M5 19h14" />
+                          </svg>
+                        )}
+                        <span>{t('download_mp3_title')}</span>
                       </button>
                     </div>
                   </div>
@@ -4951,20 +5671,20 @@ const App: React.FC = () => {
       )}
 
       {showCameraCapture && (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[rgba(15,23,42,0.26)] p-0 backdrop-blur-sm md:items-center md:p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-[rgba(15,23,42,0.28)] p-0 backdrop-blur-sm md:items-center md:p-6">
           <div role="dialog" aria-modal="true" aria-labelledby="camera-capture-title" aria-describedby="camera-capture-description" className="flex h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-[#f1edf9] shadow-none md:h-auto md:max-w-xl md:rounded-[2.2rem] md:border md:border-[#d8d0ed] md:shadow-[0_36px_90px_-54px_rgba(32,15,93,0.36)]">
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h3 id="camera-capture-title" className="text-lg font-black text-zinc-950">{t('camera_modal_title')}</h3>
-                  <p id="camera-capture-description" className="mt-1 hidden text-sm leading-relaxed text-zinc-500 md:block">{t('camera_modal_body')}</p>
+                  <p id="camera-capture-description" className="mt-1 text-sm leading-relaxed text-zinc-500">{t('camera_modal_body')}</p>
                 </div>
-                <button onClick={closeCameraCapture} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
+                <button onClick={hideCameraCapture} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
 
               <div className="overflow-hidden rounded-[2rem] border border-[#d8d0ed] bg-zinc-950 shadow-inner">
                 {cameraError ? (
-                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+                  <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 px-6 py-10 text-center">
                     <p className="max-w-sm text-sm leading-relaxed text-white/82">{cameraError}</p>
                     <button
                       onClick={handleOpenNativeCamera}
@@ -4976,7 +5696,7 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 ) : isCameraBooting ? (
-                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-white">
+                  <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-white">
                     <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white" />
                     <p className="text-sm font-semibold text-white/78">{t('camera_starting')}</p>
                   </div>
@@ -4986,78 +5706,84 @@ const App: React.FC = () => {
                     autoPlay
                     playsInline
                     muted
-                    className="h-[52dvh] w-full bg-zinc-950 object-cover sm:h-[420px]"
+                    className="h-[54dvh] w-full bg-zinc-950 object-cover sm:h-[440px]"
                   />
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#5f5497]">{t('camera_btn')}</p>
-                  <p className="mt-1 text-sm font-semibold text-zinc-700">
-                    {cameraShots.length > 0 ? cameraCountStatus : t('camera_shots_empty')}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className={subtleLabelClass}>{t('camera_pending_title')}</p>
+                    <p className="mt-1 text-sm font-black text-zinc-900">
+                      {cameraShots.length > 0 ? cameraCountStatus : t('camera_shots_empty')}
+                    </p>
+                  </div>
                   <button
                     onClick={handleOpenNativeCamera}
-                    disabled={isCameraImporting}
                     title={t('camera_open_native_btn')}
                     aria-label={t('camera_open_native_btn')}
-                    className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-100 disabled:text-zinc-400', darkButtonClass)}
+                    className={classNames('rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] transition-all active:scale-[0.98]', darkButtonClass)}
                   >
                     {t('camera_open_native_btn')}
                   </button>
-                  <button
-                    onClick={() => { void handleCaptureCameraShot(); }}
-                    disabled={Boolean(cameraError) || isCameraBooting || isCameraImporting}
-                    title={t('camera_capture_btn')}
-                    aria-label={t('camera_capture_btn')}
-                    className={classNames('rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
-                  >
-                    {t('camera_capture_btn')}
-                  </button>
                 </div>
+
+                {cameraShots.length > 0 && (
+                  <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+                    {cameraShots.map((shot, index) => (
+                      <div key={shot.id} className="relative w-24 shrink-0 overflow-hidden rounded-[1.3rem] border border-[#d8d0ed] bg-[#f8f6fc]">
+                        <img src={shot.previewUrl} alt="" className="h-24 w-full object-cover" />
+                        <div className="flex items-center justify-between px-2.5 py-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">#{index + 1}</span>
+                          <button
+                            onClick={() => removeCameraShot(shot.id)}
+                            disabled={isCameraImporting}
+                            title={t('camera_remove_photo_btn')}
+                            aria-label={t('camera_remove_photo_btn')}
+                            className="text-[10px] font-black text-[#391BA6] disabled:text-zinc-400"
+                          >
+                            {t('camera_remove_photo_btn')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {cameraShots.length > 0 ? (
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  {cameraShots.map((shot, index) => (
-                    <div key={shot.id} className="relative w-28 shrink-0 overflow-hidden rounded-[1.4rem] border border-[#d8d0ed] bg-white shadow-sm">
-                      <img src={shot.previewUrl} alt="" className="h-28 w-full object-cover" />
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">#{index + 1}</span>
-                        <button
-                          onClick={() => removeCameraShot(shot.id)}
-                          title={t('camera_remove_photo_btn')}
-                          aria-label={t('camera_remove_photo_btn')}
-                          className="text-[10px] font-black uppercase tracking-[0.16em] text-[#391BA6]"
-                        >
-                          {t('camera_remove_photo_btn')}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="mt-auto grid gap-2 sm:grid-cols-2">
+              <div className="mt-auto grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                 <button
                   onClick={closeCameraCapture}
+                  disabled={isCameraImporting}
                   title={t('cancel_btn')}
                   aria-label={t('cancel_btn')}
-                  className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
+                  className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-100 disabled:text-zinc-400', darkButtonClass)}
                 >
                   {t('cancel_btn')}
                 </button>
+
+                <button
+                  onClick={() => { void handleCaptureCameraShot(); }}
+                  disabled={Boolean(cameraError) || isCameraBooting || isCameraImporting}
+                  title={t('camera_capture_btn')}
+                  aria-label={t('camera_capture_btn')}
+                  className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-[linear-gradient(135deg,#391BA6,#7763BE)] text-white shadow-[0_28px_48px_-28px_rgba(57,27,166,0.55)] transition-all active:scale-95 disabled:border-zinc-200 disabled:bg-zinc-300 disabled:text-zinc-500"
+                >
+                  <svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-current stroke-[1.8]">
+                    <path d="M5 8h3l1.4-2h5.2L16 8h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" />
+                    <circle cx="12" cy="13" r="3.2" />
+                  </svg>
+                </button>
+
                 <button
                   onClick={() => { void handleImportCameraShots(); }}
                   disabled={cameraShots.length === 0 || isCameraImporting}
-                  title={cameraUsePhotosLabel}
-                  aria-label={cameraUsePhotosLabel}
+                  title={t('camera_done_btn')}
+                  aria-label={t('camera_done_btn')}
                   className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500', accentButtonClass)}
                 >
-                  {isCameraImporting ? t('loading_text') : cameraUsePhotosLabel}
+                  {isCameraImporting ? t('loading_text') : t('camera_done_btn')}
                 </button>
               </div>
             </div>
@@ -5202,44 +5928,107 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {categoryEditorEpisode && (
+      {pendingDeleteEpisode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.18)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-episode-title" className="w-full max-w-md overflow-hidden rounded-[2.3rem] border border-red-200 bg-[#fff7f6] shadow-[0_36px_90px_-54px_rgba(127,29,29,0.28)] animate-in zoom-in-95 duration-300">
+            <div className="space-y-5 p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 id="delete-episode-title" className="text-lg font-black text-zinc-950">{t('delete_episode_confirm_title')}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-600">{t('delete_episode_confirm_body')}</p>
+                  <p className="mt-3 truncate rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-zinc-900">
+                    {pendingDeleteEpisode.title}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setPendingDeleteEpisode(null)}
+                  disabled={isDeletingEpisodeId === pendingDeleteEpisode.id}
+                  className="text-2xl text-zinc-400 hover:text-zinc-700 disabled:text-zinc-300"
+                  title={t('close_btn')}
+                  aria-label={t('close_btn')}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => setPendingDeleteEpisode(null)}
+                  disabled={isDeletingEpisodeId === pendingDeleteEpisode.id}
+                  title={t('cancel_btn')}
+                  aria-label={t('cancel_btn')}
+                  className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95 disabled:bg-zinc-100 disabled:text-zinc-400', darkButtonClass)}
+                >
+                  {t('cancel_btn')}
+                </button>
+                <button
+                  onClick={() => { void handleDeleteEpisode(pendingDeleteEpisode); }}
+                  disabled={isDeletingEpisodeId === pendingDeleteEpisode.id}
+                  title={t('delete_episode_confirm_btn')}
+                  aria-label={t('delete_episode_confirm_btn')}
+                  className="w-full rounded-2xl bg-red-600 px-4 py-3 text-xs font-black uppercase tracking-wide text-white shadow-[0_20px_38px_-20px_rgba(220,38,38,0.42)] transition-all active:scale-95 disabled:bg-red-200 disabled:text-red-50"
+                >
+                  {isDeletingEpisodeId === pendingDeleteEpisode.id ? t('loading_text') : t('delete_episode_confirm_btn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingEpisode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
           <div role="dialog" aria-modal="true" aria-labelledby="category-editor-title" className="w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.34)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-5">
               <div className="flex justify-between items-center gap-4">
                 <div className="min-w-0">
-                  <h3 id="category-editor-title" className="text-lg font-black text-zinc-950">{t('categories_title')}</h3>
-                  <p className="mt-1 truncate text-xs font-bold text-zinc-500">{categoryEditorEpisode.title}</p>
+                  <h3 id="category-editor-title" className="text-lg font-black text-zinc-950">{t('episode_editor_title')}</h3>
+                  <p className="mt-1 truncate text-xs font-bold text-zinc-500">{editingEpisode.title}</p>
                 </div>
-                <button onClick={closeCategoryEditor} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
+                <button onClick={closeEpisodeEditor} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
 
-              <div className="rounded-3xl border border-[#d8d0ed] bg-white/92 p-5 space-y-3">
-                <label htmlFor="episode-categories" className={subtleLabelClass}>
-                  {t('categories_title')}
-                </label>
-                <input
-                  id="episode-categories"
-                  name="episode-categories"
-                  value={categoryDraft}
-                  onChange={(e) => setCategoryDraft(e.target.value)}
-                  placeholder={t('category_placeholder')}
-                  className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
-                />
-                <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
+              <div className="space-y-4 rounded-3xl border border-[#d8d0ed] bg-white/92 p-5">
+                <div className="space-y-3">
+                  <label htmlFor="episode-title" className={subtleLabelClass}>
+                    {t('episode_title_label')}
+                  </label>
+                  <input
+                    id="episode-title"
+                    name="episode-title"
+                    value={episodeTitleDraft}
+                    onChange={(e) => setEpisodeTitleDraft(e.target.value)}
+                    className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label htmlFor="episode-categories" className={subtleLabelClass}>
+                    {t('categories_title')}
+                  </label>
+                  <input
+                    id="episode-categories"
+                    name="episode-categories"
+                    value={categoryDraft}
+                    onChange={(e) => setCategoryDraft(e.target.value)}
+                    placeholder={t('category_placeholder')}
+                    className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+                  />
+                  <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
+                </div>
               </div>
 
               <button
-                onClick={saveEpisodeCategories}
-                title={t('save_categories_btn')}
-                aria-label={t('save_categories_btn')}
+                onClick={saveEpisodeEdits}
+                title={t('save_episode_btn')}
+                aria-label={t('save_episode_btn')}
                 className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase text-white transition-all active:scale-95', accentButtonClass)}
               >
-                {t('save_categories_btn')}
+                {t('save_episode_btn')}
               </button>
 
               <button
-                onClick={closeCategoryEditor}
+                onClick={closeEpisodeEditor}
                 title={t('close_btn')}
                 aria-label={t('close_btn')}
                 className={classNames('w-full rounded-2xl py-4 text-xs font-black uppercase transition-all active:scale-95', darkButtonClass)}

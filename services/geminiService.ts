@@ -24,6 +24,9 @@ type GeminiStreamPayload = {
 } | {
   action: "extractPdfStream";
   base64Data: string;
+} | {
+  action: "extractWebPage";
+  url: string;
 };
 
 type GeminiStreamEvent = {
@@ -253,6 +256,18 @@ export const translateText = async (
     action: "translate",
     text,
     targetLanguage,
+  }, options);
+
+  return result.text;
+};
+
+export const extractWebPageText = async (
+  url: string,
+  options?: GeminiRequestOptions
+): Promise<string> => {
+  const result = await postGemini<{ text: string }>({
+    action: "extractWebPage",
+    url,
   }, options);
 
   return result.text;

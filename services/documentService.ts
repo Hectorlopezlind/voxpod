@@ -81,7 +81,7 @@ export const getFileExtension = (fileName: string) => {
   return parts.length > 1 ? parts.pop() ?? '' : '';
 };
 
-const normalizeImportedText = (value: string) =>
+export const normalizeImportedText = (value: string) =>
   value
     .replace(/\r\n?/g, '\n')
     .replace(/\u0000/g, '')
@@ -106,7 +106,7 @@ const decodeXmlEntities = (value: string) =>
     return XML_ENTITY_MAP[loweredEntity] ?? '';
   });
 
-const stripMarkupToText = (value: string) =>
+export const stripMarkupToText = (value: string) =>
   normalizeImportedText(
     decodeXmlEntities(
       value
@@ -117,6 +117,54 @@ const stripMarkupToText = (value: string) =>
         .replace(/<[^>]+>/g, ' ')
     )
   );
+
+const readTagContents = (markup: string, tagName: string) =>
+  Array.from(
+    markup.matchAll(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi'))
+  ).map((match) => match[1] ?? '');
+
+const pickPrimaryMarkupSection = (markup: string) => {
+  const articleCandidates = readTagContents(markup, 'article');
+  const mainCandidates = readTagContents(markup, 'main');
+  const bodyCandidates = readTagContents(markup, 'body');
+  const candidates = [...articleCandidates, ...mainCandidates, ...bodyCandidates]
+    .map(candidate => candidate.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  return candidates[0] ?? markup;
+};
+
+const readMetaContent = (markup: string, attributeValue: string) => {
+  const safeAttribute = attributeValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [
+    new RegExp(`<meta[^>]+(?:name|property)=["']${safeAttribute}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${safeAttribute}["'][^>]*>`, 'i'),
+  ];
+
+  for (const pattern of patterns) {
+    const match = markup.match(pattern);
+    const content = match?.[1];
+    if (content) {
+      return stripMarkupToText(content);
+    }
+  }
+
+  return '';
+};
+
+export const extractReadableHtmlText = (markup: string) => {
+  const titleMatch = markup.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? stripMarkupToText(titleMatch[1]) : '';
+  const description = readMetaContent(markup, 'description') || readMetaContent(markup, 'og:description');
+  const primaryText = stripMarkupToText(pickPrimaryMarkupSection(markup));
+
+  return normalizeImportedText(
+    [title, description, primaryText]
+      .filter(Boolean)
+      .join('\n\n')
+  );
+};
 
 const stripRtfToText = (value: string) =>
   normalizeImportedText(

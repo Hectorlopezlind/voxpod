@@ -43,7 +43,7 @@ export interface PodcastEpisode {
   duration: number;
   chunkDurations?: number[];
   readyChunkCount?: number;
-  generationStatus?: 'processing' | 'ready';
+  generationStatus?: 'processing' | 'ready' | 'failed';
   playbackRate: number;
   lastPosition?: {
     chunkIndex: number;
