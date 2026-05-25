@@ -82,7 +82,8 @@ const getRetryDelay = (attempt: number) => {
   return Math.round(baseDelay + Math.random() * 350);
 };
 
-const isRetryableHttpStatus = (status: number) => status === 408 || status === 425 || status === 429 || status >= 500;
+// A 429 request has already consumed quota and retrying immediately burns scarce free-tier TTS calls.
+const isRetryableHttpStatus = (status: number) => status === 408 || status === 425 || status >= 500;
 
 const isRetryableMessage = (message: string) => {
   const normalized = message.toLowerCase();
@@ -159,9 +160,10 @@ const postGemini = async <T>(
       if (!response.ok) {
         const message =
           typeof result?.error === "string" ? result.error : "Ett serverfel uppstod.";
+        const isTtsRequest = payload.action === "tts";
         throw new GeminiRequestError(message, {
           status: response.status,
-          retryable: isRetryableHttpStatus(response.status) && isRetryableMessage(message),
+          retryable: !isTtsRequest && isRetryableHttpStatus(response.status) && isRetryableMessage(message),
         });
       }
 

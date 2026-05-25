@@ -196,8 +196,13 @@ const normalizeApiError = (error: unknown) => {
     message.includes("retrydelay") ||
     message.includes("retry in")
   ) {
-    if (message.includes("gemini-2.5-flash-tts") || message.includes("flash-tts")) {
-      return json({ error: "Gemini TTS free tier limit reached. This project allows 10 free TTS requests for the current quota window. Add billing in Google AI Studio or try again later." }, 429);
+    if (
+      message.includes("gemini-2.5-flash-preview-tts") ||
+      message.includes("gemini-2.5-flash-tts") ||
+      message.includes("flash-preview-tts") ||
+      message.includes("flash-tts")
+    ) {
+      return json({ error: "Gemini TTS free tier limit reached. Check the Rate Limit page in Google AI Studio, wait for the quota window to reset, or enable billing." }, 429);
     }
 
     return json({ error: "Too many requests. Wait a moment and try again." }, 429);
