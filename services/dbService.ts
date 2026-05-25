@@ -1,8 +1,11 @@
 
+import type { EpisodeNotes } from "../types";
+
 const DB_NAME = 'VoxPodDB';
 const AUDIO_STORE_NAME = 'audioBlobs';
 const IMPORT_TEXT_CACHE_STORE_NAME = 'importTextCache';
-const DB_VERSION = 2;
+const SUMMARY_CACHE_STORE_NAME = 'summaryCache';
+const DB_VERSION = 3;
 
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -14,6 +17,9 @@ export const initDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(IMPORT_TEXT_CACHE_STORE_NAME)) {
         db.createObjectStore(IMPORT_TEXT_CACHE_STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains(SUMMARY_CACHE_STORE_NAME)) {
+        db.createObjectStore(SUMMARY_CACHE_STORE_NAME);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -102,6 +108,38 @@ export const getImportTextCache = async (id: string): Promise<string | null> => 
       }
 
       resolve(request.result?.text || null);
+    };
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const saveSummaryCache = async (id: string, notes: EpisodeNotes): Promise<void> => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SUMMARY_CACHE_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(SUMMARY_CACHE_STORE_NAME);
+    const request = store.put({
+      notes,
+      updatedAt: Date.now(),
+    }, id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const getSummaryCache = async (id: string): Promise<EpisodeNotes | null> => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SUMMARY_CACHE_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(SUMMARY_CACHE_STORE_NAME);
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const result = request.result;
+      if (result?.notes?.title && typeof result.notes.summary === 'string' && Array.isArray(result.notes.sections)) {
+        resolve(result.notes as EpisodeNotes);
+        return;
+      }
+      resolve(null);
     };
     request.onerror = () => reject(request.error);
   });

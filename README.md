@@ -46,8 +46,11 @@ Supabase auth is wired into the frontend. For private per-user cloud sync across
 What the SQL file sets up:
 
 - `public.podcast_episodes` for per-user episode metadata
+- `public.podcast_generation_usage` for server-recorded Gemini TTS token usage and calculated paid-tier USD cost per podcast chunk
 - Row Level Security so each authenticated user only sees their own rows
 - Storage policies so each user can only access objects inside `Audio/<their-user-id>/...`
+
+Rerun `supabase/voxpod_cloud_sync.sql` after deploying usage tracking so new podcast generations can be logged. The app displays exact Gemini-reported TTS token counts; the USD badge is calculated using the published standard paid-tier price for `gemini-2.5-flash-preview-tts`. Free-tier requests remain free of charge.
 
 ## Secrets
 

@@ -56,6 +56,50 @@ before update on public.podcast_episodes
 for each row
 execute function public.touch_podcast_episodes_updated_at();
 
+create table if not exists public.podcast_generation_usage (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  episode_id text not null,
+  chunk_index integer not null check (chunk_index >= 0),
+  usage_category text not null check (usage_category in ('podcast_audio', 'summary_audio')),
+  provider text not null,
+  model text not null,
+  response_id text,
+  input_tokens integer not null check (input_tokens >= 0),
+  output_tokens integer not null check (output_tokens >= 0),
+  total_tokens integer not null check (total_tokens >= 0),
+  input_cost_usd numeric(16, 10) not null check (input_cost_usd >= 0),
+  output_cost_usd numeric(16, 10) not null check (output_cost_usd >= 0),
+  total_cost_usd numeric(16, 10) not null check (total_cost_usd >= 0),
+  pricing jsonb not null,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists podcast_generation_usage_episode_idx
+on public.podcast_generation_usage (user_id, episode_id, created_at);
+
+create unique index if not exists podcast_generation_usage_response_id_idx
+on public.podcast_generation_usage (user_id, response_id)
+where response_id is not null;
+
+alter table public.podcast_generation_usage enable row level security;
+
+grant select, insert on public.podcast_generation_usage to authenticated;
+
+drop policy if exists "Users can read their own generation usage" on public.podcast_generation_usage;
+create policy "Users can read their own generation usage"
+on public.podcast_generation_usage
+for select
+to authenticated
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+drop policy if exists "Users can insert their own generation usage" on public.podcast_generation_usage;
+create policy "Users can insert their own generation usage"
+on public.podcast_generation_usage
+for insert
+to authenticated
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
 insert into storage.buckets (id, name, public)
 values ('Audio', 'Audio', false)
 on conflict (id) do update set public = excluded.public;

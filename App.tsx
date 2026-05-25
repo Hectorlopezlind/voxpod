@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark } from './types';
+import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark, GeminiGenerationUsage, EpisodeGenerationCost } from './types';
 import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf, extractWebPageText } from './services/geminiService';
-import { saveAudioBlob, getAudioBlob, deleteAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache } from './services/dbService';
+import { saveAudioBlob, getAudioBlob, deleteAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache, getSummaryCache, saveSummaryCache } from './services/dbService';
 import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
 import {
@@ -35,11 +35,19 @@ import heroPreviewImage from './supabase/images/man.webp';
 
 const PREMIUM_VOICES = [
   { name: VoiceName.Kore, label: 'Klara' },
-  { name: VoiceName.Puck, label: 'Peter' },
-  { name: VoiceName.Charon, label: 'Chris' },
-  { name: VoiceName.Zephyr, label: 'Sofia' },
-  { name: VoiceName.Fenrir, label: 'Erik' }
+  { name: VoiceName.Charon, label: 'Daniel' },
+  { name: VoiceName.Fenrir, label: 'Peter' }
 ];
+
+const VOICE_LABELS: Record<string, string> = {
+  [VoiceName.Kore]: 'Klara',
+  [VoiceName.Charon]: 'Daniel',
+  [VoiceName.Fenrir]: 'Peter',
+  [VoiceName.Puck]: 'Peter',
+  [VoiceName.Zephyr]: 'Klara',
+};
+
+const getVoiceDisplayName = (voice: string) => VOICE_LABELS[voice] ?? voice;
 
 const LANGUAGES = [
   // Prioriterade språk absolut överst
@@ -166,12 +174,15 @@ const EN_TRANSLATIONS = {
   auth_password_label: 'Password',
   auth_sign_in_tab: 'Sign in',
   auth_sign_up_tab: 'Create account',
+  auth_forgot_tab: 'Reset password',
   auth_sign_in_btn: 'Sign in',
   auth_sign_up_btn: 'Create account',
+  auth_reset_btn: 'Send reset link',
   auth_sign_out_btn: 'Sign out',
   auth_signed_in_as: 'Signed in as',
   auth_success_signed_in: 'Signed in.',
   auth_success_signed_out: 'Signed out.',
+  auth_reset_sent: 'Password reset link sent. Check your email.',
   auth_check_email: 'Account created. Check your email to verify it before signing in if verification is enabled.',
   auth_email_confirmed: 'Account created and signed in.',
   auth_loading: 'Connecting...',
@@ -204,6 +215,7 @@ const EN_TRANSLATIONS = {
   language_toggle_to_spanish: 'Cambiar a español',
   download_mp3_title: 'Download MP3',
   download_mp3_error: 'MP3 download failed.',
+  import_replace_confirm: 'Do you want to delete the existing text? OK replaces it, Cancel adds the new text after it.',
   playback_position_label: 'Playback position',
   new_episode_title: 'New episode',
   image_import_failed: 'Image import failed.',
@@ -348,12 +360,15 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   auth_password_label: 'Contraseña',
   auth_sign_in_tab: 'Iniciar sesión',
   auth_sign_up_tab: 'Crear cuenta',
+  auth_forgot_tab: 'Restablecer contraseña',
   auth_sign_in_btn: 'Iniciar sesión',
   auth_sign_up_btn: 'Crear cuenta',
+  auth_reset_btn: 'Enviar enlace',
   auth_sign_out_btn: 'Cerrar sesión',
   auth_signed_in_as: 'Conectado como',
   auth_success_signed_in: 'Sesión iniciada.',
   auth_success_signed_out: 'Sesión cerrada.',
+  auth_reset_sent: 'Enlace de restablecimiento enviado. Revisa tu correo.',
   auth_check_email: 'Cuenta creada. Revisa tu correo para verificarla antes de iniciar sesión si la verificación está activada.',
   auth_email_confirmed: 'Cuenta creada e inicio de sesión completado.',
   auth_loading: 'Conectando...',
@@ -386,6 +401,7 @@ const ES_TRANSLATIONS: Record<keyof typeof EN_TRANSLATIONS, string> = {
   language_toggle_to_spanish: 'Cambiar a español',
   download_mp3_title: 'Descargar MP3',
   download_mp3_error: 'No se pudo descargar el MP3.',
+  import_replace_confirm: '¿Quieres borrar el texto existente? OK lo reemplaza, Cancelar añade el texto nuevo después.',
   playback_position_label: 'Posición de reproducción',
   new_episode_title: 'Nuevo episodio',
   image_import_failed: 'La importación de imágenes falló.',
@@ -496,6 +512,33 @@ type AuthFeedback = {
   message: string;
 };
 
+type AppErrorCode =
+  | 'TOKEN_LIMIT'
+  | 'RATE_LIMIT'
+  | 'NETWORK'
+  | 'AUTH'
+  | 'OCR_FAILED'
+  | 'SUMMARY_FAILED'
+  | 'TTS_TIMEOUT'
+  | 'AUDIO_FAILED'
+  | 'UNKNOWN';
+
+type ClassifiedAppError = {
+  code: AppErrorCode;
+  title: string;
+  message: string;
+  actionLabel?: string;
+  technicalDetails: string;
+};
+
+type AiRequestContext = {
+  functionName: string;
+  kind: 'OCR' | 'SUMMARY' | 'TTS' | 'SUMMARY_TTS' | 'IMPORT' | 'TRANSLATE' | 'WEB';
+  textLength?: number;
+  model?: string;
+  provider?: string;
+};
+
 type LayoutPreset = {
   shellClassName: string;
   headerClassName: string;
@@ -512,6 +555,41 @@ type LayoutPreset = {
   playerShellClassName: string;
 };
 
+const LOGIN_PATH = '/login';
+const SIGNUP_PATH = '/signup';
+const FORGOT_PASSWORD_PATH = '/forgot-password';
+const DEFAULT_AUTHENTICATED_PATH = '/create-pod';
+const PUBLIC_AUTH_PATHS = new Set([LOGIN_PATH, SIGNUP_PATH, FORGOT_PASSWORD_PATH]);
+
+const getCurrentRoutePath = () =>
+  typeof window === 'undefined' ? LOGIN_PATH : window.location.pathname || LOGIN_PATH;
+
+const getCurrentRouteWithSearch = () =>
+  typeof window === 'undefined'
+    ? DEFAULT_AUTHENTICATED_PATH
+    : `${window.location.pathname || DEFAULT_AUTHENTICATED_PATH}${window.location.search || ''}${window.location.hash || ''}`;
+
+const isPublicAuthPath = (path: string) => PUBLIC_AUTH_PATHS.has(path);
+
+const replaceRoute = (path: string) => {
+  if (typeof window === 'undefined') return;
+  window.history.replaceState(null, '', path);
+};
+
+const pushRoute = (path: string) => {
+  if (typeof window === 'undefined') return;
+  window.history.pushState(null, '', path);
+};
+
+const getRedirectParam = () => {
+  if (typeof window === 'undefined') return null;
+  const redirect = new URLSearchParams(window.location.search).get('redirect');
+  if (!redirect || isPublicAuthPath(redirect.split('?')[0])) {
+    return null;
+  }
+  return redirect.startsWith('/') ? redirect : null;
+};
+
 type LiveGenerationState = {
   sourceSessionId: string;
   episodeId: string;
@@ -521,6 +599,7 @@ type LiveGenerationState = {
   startedPlayback: boolean;
   voice: VoiceName;
   title: string;
+  generationCost?: EpisodeGenerationCost;
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -528,6 +607,210 @@ const clamp = (value: number, min: number, max: number) =>
 
 const classNames = (...values: Array<string | false | null | undefined>) =>
   values.filter(Boolean).join(' ');
+
+const stringifyTechnicalError = (error: unknown) => {
+  if (error instanceof Error) {
+    const status = 'status' in error ? `status=${String((error as { status?: unknown }).status)}` : '';
+    return [error.name, error.message, status, error.stack].filter(Boolean).join('\n');
+  }
+
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch {
+    return String(error);
+  }
+};
+
+const formatAiRequestContext = (context?: string | AiRequestContext) => {
+  const timestamp = new Date().toISOString();
+  if (!context) {
+    return `timestamp=${timestamp}`;
+  }
+
+  if (typeof context === 'string') {
+    return [
+      `function=${context}`,
+      `timestamp=${timestamp}`,
+    ].join('\n');
+  }
+
+  return [
+    `function=${context.functionName}`,
+    `kind=${context.kind}`,
+    `provider=${context.provider ?? 'Gemini'}`,
+    context.model ? `model=${context.model}` : null,
+    typeof context.textLength === 'number' ? `textLength=${context.textLength}` : null,
+    `timestamp=${timestamp}`,
+  ].filter(Boolean).join('\n');
+};
+
+const withAiRequestContext = (error: unknown, context: AiRequestContext) => {
+  const sourceMessage = error instanceof Error ? error.message : String(error ?? 'Unknown AI error');
+  const wrappedError = new Error(`${sourceMessage}\n${formatAiRequestContext(context)}`);
+  wrappedError.name = error instanceof Error ? error.name : 'AiRequestError';
+  if (error instanceof Error && error.stack) {
+    wrappedError.stack = error.stack;
+  }
+  if (error instanceof Error && 'status' in error) {
+    (wrappedError as Error & { status?: unknown }).status = (error as Error & { status?: unknown }).status;
+  }
+  if (error instanceof Error && 'retryable' in error) {
+    (wrappedError as Error & { retryable?: unknown }).retryable = (error as Error & { retryable?: unknown }).retryable;
+  }
+  return wrappedError;
+};
+
+const parseAppError = (error: unknown, context?: string | AiRequestContext): ClassifiedAppError => {
+  const contextDetails = formatAiRequestContext(context);
+  const technicalDetails = `${contextDetails}\n\n${stringifyTechnicalError(error)}`;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = `${contextDetails} ${message} ${technicalDetails}`.toLowerCase();
+  const status = error instanceof Error && 'status' in error ? Number((error as { status?: unknown }).status) : undefined;
+  const isLimitError = status === 402 ||
+    status === 429 ||
+    normalized.includes('rate limit') ||
+    normalized.includes('too many requests') ||
+    normalized.includes('free tier limit') ||
+    normalized.includes('quota') ||
+    normalized.includes('resource_exhausted') ||
+    normalized.includes('generate_content_free_tier_requests') ||
+    normalized.includes('no credits') ||
+    normalized.includes('generation limit');
+
+  if (isLimitError && (normalized.includes('kind=summary') || normalized.includes('function=summary generation'))) {
+    return {
+      code: 'SUMMARY_FAILED',
+      title: 'Summary unavailable',
+      message: 'Audio was created, but the summary could not be generated because the AI limit was reached.',
+      actionLabel: 'Retry summary',
+      technicalDetails,
+    };
+  }
+
+  if (isLimitError && normalized.includes('kind=summary_tts')) {
+    return {
+      code: 'AUDIO_FAILED',
+      title: 'Summary audio unavailable',
+      message: 'The written summary is saved, but summary audio could not be generated because the AI limit was reached.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (status === 429 || normalized.includes('rate limit') || normalized.includes('too many requests') || normalized.includes('free tier limit')) {
+    return {
+      code: 'RATE_LIMIT',
+      title: normalized.includes('tts') || normalized.includes('free tier limit') ? 'AI limit reached' : 'Too many requests',
+      message: normalized.includes('tts') || normalized.includes('free tier limit')
+        ? 'Continue listening to already generated audio. To create more, wait for the quota to reset, use a shorter text, or enable billing.'
+        : 'Wait a moment and try again.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (status === 401 || (status === 403 && !normalized.includes('permission_denied')) || normalized.includes('session') || normalized.includes('inloggad') || normalized.includes('auth')) {
+    return {
+      code: 'AUTH',
+      title: 'Session expired',
+      message: 'Please sign in again.',
+      actionLabel: 'Sign in',
+      technicalDetails,
+    };
+  }
+
+  if (
+    status === 402 ||
+    normalized.includes('no credits') ||
+    normalized.includes('quota') ||
+    normalized.includes('billing') ||
+    normalized.includes('resource_exhausted') ||
+    normalized.includes('consumer_suspended') ||
+    normalized.includes('permission_denied')
+  ) {
+    return {
+      code: 'TOKEN_LIMIT',
+      title: 'AI limit reached',
+      message: 'Continue listening to already generated audio. To create more, wait for the quota to reset, use a shorter text, or enable billing.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (status === 504 || normalized.includes('timeout') || normalized.includes('deadline') || normalized.includes('took too long')) {
+    return {
+      code: 'TTS_TIMEOUT',
+      title: 'Generation took too long',
+      message: 'Your podcast may still finish shortly.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (!navigator.onLine || normalized.includes('network') || normalized.includes('fetch') || normalized.includes('connection')) {
+    return {
+      code: 'NETWORK',
+      title: 'Connection problem',
+      message: 'Check your internet connection.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (normalized.includes('image import') || normalized.includes('ocr') || normalized.includes('could not decode the image') || normalized.includes('read the pages')) {
+    return {
+      code: 'OCR_FAILED',
+      title: 'We couldn’t read the pages',
+      message: 'Try clearer photos.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  if (normalized.includes('summary') || normalized.includes('notes')) {
+    return {
+      code: 'SUMMARY_FAILED',
+      title: 'Summary unavailable',
+      message: 'Audio was created but summary failed.',
+      actionLabel: 'Retry summary',
+      technicalDetails,
+    };
+  }
+
+  if (normalized.includes('audio') || normalized.includes('ljud') || normalized.includes('playback') || normalized.includes('wav')) {
+    return {
+      code: 'AUDIO_FAILED',
+      title: 'Playback interrupted',
+      message: status === 400 ? 'Try shorter text or remove unusual characters.' : 'Resume from where you left off.',
+      actionLabel: 'Retry',
+      technicalDetails,
+    };
+  }
+
+  return {
+    code: 'UNKNOWN',
+    title: 'Something unexpected happened',
+    message: 'Try again.',
+    actionLabel: 'Retry',
+    technicalDetails,
+  };
+};
+
+const isAiLimitError = (error: unknown) => {
+  const technicalDetails = stringifyTechnicalError(error).toLowerCase();
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+  const normalized = `${message} ${technicalDetails}`;
+  const status = error instanceof Error && 'status' in error ? Number((error as { status?: unknown }).status) : undefined;
+
+  return status === 402 ||
+    status === 429 ||
+    normalized.includes('resource_exhausted') ||
+    normalized.includes('quota') ||
+    normalized.includes('free tier limit') ||
+    normalized.includes('generate_content_free_tier_requests') ||
+    normalized.includes('ai limit reached') ||
+    normalized.includes('tts free tier');
+};
 
 const formatTemplate = (template: string, values: Record<string, string | number>) =>
   Object.entries(values).reduce(
@@ -561,19 +844,24 @@ const imageNameCollator = new Intl.Collator(undefined, {
 
 const INITIAL_PLAYBACK_BUFFER = 2;
 const MAX_CHUNK_CHARACTERS = 1800;
-const MAX_NOTES_SOURCE_CHARACTERS = 18000;
-const MAX_NOTE_SUMMARY_CHARACTERS = 960;
-const MAX_NOTE_SECTION_BULLETS = 6;
-const MAX_NOTE_SECTIONS = 4;
-const MAX_SUMMARY_AUDIO_CHARACTERS = 1800;
-const MAX_SUMMARY_AUDIO_BULLETS = 8;
+const MAX_NOTES_SOURCE_CHARACTERS = 30000;
+const MAX_NOTE_SUMMARY_CHARACTERS = 1800;
+const MAX_NOTE_SECTION_BULLETS = 8;
+const MAX_NOTE_SECTIONS = 5;
+const MAX_SUMMARY_AUDIO_CHARACTERS = 2600;
+const MAX_SUMMARY_AUDIO_BULLETS = 12;
 const LIVE_GENERATION_MIN_READY_CHUNKS = 2;
 const LIVE_GENERATION_EARLY_START_CHARACTERS = 900;
 const IMPORT_STREAM_FLUSH_CHARACTERS = 80;
 const IMPORT_TEXT_CACHE_VERSION = 1;
+const TTS_CONTENT_CACHE_VERSION = 1;
+const SUMMARY_CONTENT_CACHE_VERSION = 1;
+const TRANSLATION_CACHE_VERSION = 1;
 const LEGACY_LIBRARY_STORAGE_KEY = 'voxpod_library';
 const GUEST_LIBRARY_STORAGE_KEY = 'voxpod_library_guest';
 const USER_LIBRARY_STORAGE_KEY_PREFIX = 'voxpod_library_user:';
+const AI_USAGE_STORAGE_KEY_PREFIX = 'voxpod_ai_usage_user:';
+const GUEST_AI_USAGE_STORAGE_KEY = 'voxpod_ai_usage_guest';
 const USER_LANGUAGE_STORAGE_KEY = 'voxpod_ui_language';
 const SPEECH_CLEANUP_STORAGE_KEY = 'voxpod_speech_cleanup';
 const INPUT_TEXT_STORAGE_KEY = 'voxpod_input_text';
@@ -582,7 +870,8 @@ const CLOUD_UPLOAD_TIMEOUT_MS = 90_000;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
 const CHUNK_POLL_INTERVAL_MS = 180;
-const CHUNK_LOAD_TIMEOUT_MS = 30_000;
+const CHUNK_LOAD_TIMEOUT_MS = 45_000;
+const CHUNK_GENERATION_LOAD_TIMEOUT_MS = 180_000;
 const CHUNK_PLAY_RETRY_DELAY_MS = 260;
 const MAX_CHUNK_PLAY_ATTEMPTS = 3;
 const PLAYBACK_STALL_TIMEOUT_MS = 12_000;
@@ -610,6 +899,184 @@ const LAYOUT_PRESET: LayoutPreset = {
 
 const getScopedLibraryStorageKey = (userId?: string | null) =>
   userId ? `${USER_LIBRARY_STORAGE_KEY_PREFIX}${userId}` : GUEST_LIBRARY_STORAGE_KEY;
+
+type AiUsageKind = 'tts' | 'summary' | 'translate' | 'ocr' | 'web';
+
+type AiUsageEntry = {
+  id: string;
+  kind: AiUsageKind;
+  inputTokens: number;
+  outputTokens: number;
+  audioSeconds?: number;
+  model: string;
+  createdAt: number;
+};
+
+type AiUsageState = {
+  monthKey: string;
+  monthlyBudgetTokens: number;
+  entries: AiUsageEntry[];
+};
+
+type AiUsageStatus = 'green' | 'orange' | 'red' | 'empty';
+
+const AI_USAGE_MONTHLY_BUDGET_TOKENS = 1_000_000;
+const ESTIMATED_TOKENS_PER_PODCAST = 52_000;
+const ESTIMATED_TOKENS_PER_SUMMARY = 12_000;
+const ESTIMATED_AUDIO_TOKENS_PER_SECOND = 18;
+const AI_USAGE_HISTORY_LIMIT = 240;
+
+const getCurrentAiUsageMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const createEmptyAiUsageState = (): AiUsageState => ({
+  monthKey: getCurrentAiUsageMonthKey(),
+  monthlyBudgetTokens: AI_USAGE_MONTHLY_BUDGET_TOKENS,
+  entries: [],
+});
+
+const getScopedAiUsageStorageKey = (userId?: string | null) =>
+  userId ? `${AI_USAGE_STORAGE_KEY_PREFIX}${userId}` : GUEST_AI_USAGE_STORAGE_KEY;
+
+const normalizeAiUsageState = (candidate: Partial<AiUsageState> | null | undefined): AiUsageState => {
+  const monthKey = getCurrentAiUsageMonthKey();
+  if (!candidate || candidate.monthKey !== monthKey) {
+    return createEmptyAiUsageState();
+  }
+
+  return {
+    monthKey,
+    monthlyBudgetTokens: typeof candidate.monthlyBudgetTokens === 'number'
+      ? Math.max(1, candidate.monthlyBudgetTokens)
+      : AI_USAGE_MONTHLY_BUDGET_TOKENS,
+    entries: Array.isArray(candidate.entries)
+      ? candidate.entries
+          .filter((entry): entry is AiUsageEntry =>
+            Boolean(entry) &&
+            typeof entry.id === 'string' &&
+            typeof entry.createdAt === 'number' &&
+            typeof entry.inputTokens === 'number' &&
+            typeof entry.outputTokens === 'number' &&
+            typeof entry.model === 'string'
+          )
+          .slice(-AI_USAGE_HISTORY_LIMIT)
+      : [],
+  };
+};
+
+const readPersistedAiUsage = (userId?: string | null): AiUsageState => {
+  try {
+    const value = localStorage.getItem(getScopedAiUsageStorageKey(userId));
+    return normalizeAiUsageState(value ? JSON.parse(value) as Partial<AiUsageState> : null);
+  } catch (error) {
+    console.error('Kunde inte läsa AI-användning', error);
+    return createEmptyAiUsageState();
+  }
+};
+
+const writePersistedAiUsage = (usage: AiUsageState, userId?: string | null) => {
+  localStorage.setItem(getScopedAiUsageStorageKey(userId), JSON.stringify(usage));
+};
+
+const estimateTextTokens = (text: string) =>
+  Math.max(1, Math.ceil(text.trim().length / 4));
+
+const calculateEstimatedUsage = (entries: AiUsageEntry[]) => {
+  const inputTokens = entries.reduce((total, entry) => total + entry.inputTokens, 0);
+  const outputTokens = entries.reduce((total, entry) => total + entry.outputTokens, 0);
+  const audioSeconds = entries.reduce((total, entry) => total + (entry.audioSeconds ?? 0), 0);
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    audioSeconds,
+  };
+};
+
+const estimateRemainingPodcasts = (remainingTokens: number) =>
+  Math.max(0, Math.floor(remainingTokens / ESTIMATED_TOKENS_PER_PODCAST));
+
+const formatTokenDisplay = (value: number) =>
+  new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Math.max(0, Math.round(value)));
+
+const formatUsdCost = (value: number) =>
+  new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: value < 0.01 ? 4 : 2,
+    maximumFractionDigits: value < 0.01 ? 4 : 2,
+  }).format(Math.max(0, value));
+
+const appendGenerationCost = (
+  current: EpisodeGenerationCost | undefined,
+  usage: GeminiGenerationUsage | undefined
+): EpisodeGenerationCost | undefined => {
+  if (!usage) return current;
+
+  return {
+    provider: usage.provider,
+    model: usage.model,
+    currency: 'USD',
+    inputTokens: (current?.inputTokens ?? 0) + usage.inputTokens,
+    outputTokens: (current?.outputTokens ?? 0) + usage.outputTokens,
+    totalTokens: (current?.totalTokens ?? 0) + usage.totalTokens,
+    inputCostUsd: (current?.inputCostUsd ?? 0) + usage.inputCostUsd,
+    outputCostUsd: (current?.outputCostUsd ?? 0) + usage.outputCostUsd,
+    totalCostUsd: (current?.totalCostUsd ?? 0) + usage.totalCostUsd,
+    billableRequests: (current?.billableRequests ?? 0) + 1,
+    inputUsdPerMillionTokens: usage.inputUsdPerMillionTokens,
+    outputUsdPerMillionTokens: usage.outputUsdPerMillionTokens,
+    updatedAt: usage.recordedAt,
+  };
+};
+
+const formatCompactDateTime = (timestamp?: number) =>
+  timestamp
+    ? new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(timestamp))
+    : 'Not updated yet';
+
+const showUsageStatus = (remainingPercent: number): AiUsageStatus => {
+  if (remainingPercent <= 0) return 'empty';
+  if (remainingPercent <= 15) return 'red';
+  if (remainingPercent <= 40) return 'orange';
+  return 'green';
+};
+
+const getUsageStatusMessage = (remainingPercent: number) => {
+  if (remainingPercent > 70) return 'You have plenty of AI available.';
+  if (remainingPercent > 40) return 'Usage is healthy.';
+  if (remainingPercent > 15) return 'Consider shorter podcasts.';
+  if (remainingPercent > 0) return "You're running low. Optimize or upgrade.";
+  return "You've reached your AI limit.";
+};
+
+const buildAiUsageSummary = (usage: AiUsageState) => {
+  const totals = calculateEstimatedUsage(usage.entries);
+  const remainingTokens = Math.max(0, usage.monthlyBudgetTokens - totals.totalTokens);
+  const remainingPercent = Math.max(0, Math.min(100, Math.round((remainingTokens / usage.monthlyBudgetTokens) * 100)));
+  const status = showUsageStatus(remainingPercent);
+  const lastEntry = usage.entries.length > 0 ? usage.entries[usage.entries.length - 1] : null;
+
+  return {
+    ...totals,
+    remainingTokens,
+    remainingPercent,
+    status,
+    message: getUsageStatusMessage(remainingPercent),
+    estimatedPodcastsLeft: estimateRemainingPodcasts(remainingTokens),
+    estimatedSummariesLeft: Math.max(0, Math.floor(remainingTokens / ESTIMATED_TOKENS_PER_SUMMARY)),
+    estimatedAudioMinutesLeft: Math.max(0, Math.floor((remainingTokens / ESTIMATED_AUDIO_TOKENS_PER_SECOND) / 60)),
+    currentModel: lastEntry?.model ?? 'Gemini Flash',
+    lastUpdate: lastEntry?.createdAt,
+  };
+};
 
 const parsePersistedLibrary = (value: string | null) => {
   if (!value) {
@@ -906,6 +1373,37 @@ const buildImportCacheKey = (file: File) =>
     file.type || 'unknown'
   ].join(':');
 
+const createStableHash = async (value: string) => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+    return Array.from(new Uint8Array(digest))
+      .map(byte => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index++) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+};
+
+const buildTtsContentCacheKey = async (text: string, voice: VoiceName, languageHint?: string) =>
+  `tts-content:${TTS_CONTENT_CACHE_VERSION}:${voice}:${languageHint || 'auto'}:${await createStableHash(text)}`;
+
+const buildSummaryContentCacheKey = async (text: string, userLang: string) =>
+  `summary-content:${SUMMARY_CONTENT_CACHE_VERSION}:${userLang}:${await createStableHash(text)}`;
+
+const buildTranslationCacheKey = async (text: string, targetLanguage: string) =>
+  `translation:${TRANSLATION_CACHE_VERSION}:${targetLanguage}:${await createStableHash(text)}`;
+
+const estimateWavDurationSeconds = (wavBuffer: ArrayBuffer, sampleRate: number = AUDIO_SAMPLE_RATE) =>
+  wavBuffer.byteLength > 44
+    ? (wavBuffer.byteLength - 44) / (sampleRate * 2)
+    : 0;
+
 const normalizeImportUrl = (value: string) => {
   const parsed = new URL(value.trim());
   parsed.hash = '';
@@ -999,6 +1497,23 @@ const NOTES_UI_LABELS = {
 const PERSONAL_NOTES_HEADINGS = new Set(
   Object.values(NOTES_UI_LABELS).map(labels => labels.personal.toLowerCase())
 );
+
+const STUDY_QUESTION_HEADINGS = new Set([
+  'study questions',
+  'questions',
+  'quiz questions',
+  'review questions',
+  'kontrollfrågor',
+  'studiefrågor',
+  'frågor',
+  'preguntas',
+  'preguntas de estudio'
+]);
+
+const isStudyQuestionHeading = (heading: string) => {
+  const normalized = normalizeInlineText(heading).toLowerCase();
+  return STUDY_QUESTION_HEADINGS.has(normalized) || /(?:study|quiz|review).{0,16}questions?/.test(normalized);
+};
 
 const cleanBulletText = (value: string) =>
   value
@@ -1144,9 +1659,77 @@ const buildReadableSourceText = (text: string) =>
       .map(normalizeInlineText)
   );
 
-const SWEDISH_SPEECH_HINT_PATTERN = /[åäö]|\b(och|att|det|som|för|med|inte|är|ska|kan|till|från|har|vara|den|detta|dessa|också|finns|sker|själv|genom)\b/gi;
-const ENGLISH_SPEECH_HINT_PATTERN = /\b(the|and|with|from|into|about|lecture|lesson|title|chapter|summary|overview|research|study|learning|introduction|method|results)\b/gi;
-const SPANISH_SPEECH_HINT_PATTERN = /[ñáéíóúü]|\b(el|la|los|las|que|con|para|como|del|una|uno|esta|este|estos|estas|más|porque)\b/gi;
+const getOcrLineKey = (value: string) =>
+  normalizeInlineText(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .trim();
+
+const isLikelyOcrPageMarker = (line: string) =>
+  /^\d{1,4}$/.test(line) ||
+  /^(?:page|sida|sid\.?|p\.?)\s*\d{1,4}\b/i.test(line) ||
+  /^[-–—]?\s*\d{1,4}\s*[-–—]?$/.test(line);
+
+const isLikelyOcrFragment = (line: string) => {
+  const normalized = normalizeInlineText(line);
+  if (!normalized) return true;
+
+  const letters = countMatchingCharacters(normalized, /[\p{L}]/gu);
+  const digits = countMatchingCharacters(normalized, /\d/g);
+  const symbols = normalized.replace(/[\p{L}\d\s]/gu, '').length;
+  const words = normalized.split(/\s+/).filter(Boolean);
+
+  if (isLikelyOcrPageMarker(normalized)) return true;
+  if (normalized.length <= 2) return true;
+  if (words.length === 1 && normalized.length <= 4 && !/[.!?]$/.test(normalized)) return true;
+  if (letters === 0 && digits > 0) return true;
+  if (letters > 0 && digits + symbols > letters * 1.4 && letters < 12) return true;
+  if (normalized.length >= 7 && letters / normalized.length < 0.35) return true;
+
+  return false;
+};
+
+const removeRepeatedOcrPhrases = (text: string) =>
+  text
+    .replace(/\b(.{12,90}?)\s+\1\b/giu, '$1')
+    .replace(/([^\n]{20,120})(?:\n\1){1,}/giu, '$1');
+
+const cleanOcrText = (text: string) => {
+  const lines = text
+    .replace(/\r/g, '\n')
+    .replace(/(\p{L})-\n(\p{L})/gu, '$1$2')
+    .split('\n')
+    .map(normalizeInlineText);
+
+  const lineCounts = new Map<string, number>();
+  lines.forEach((line) => {
+    const key = getOcrLineKey(line);
+    if (key.length >= 4) {
+      lineCounts.set(key, (lineCounts.get(key) ?? 0) + 1);
+    }
+  });
+
+  const seen = new Set<string>();
+  const cleanedLines = lines.filter((line) => {
+    const key = getOcrLineKey(line);
+    if (!key) return false;
+    if (isLikelyOcrFragment(line)) return false;
+    if ((lineCounts.get(key) ?? 0) >= 3 && line.length <= 90) return false;
+    if (seen.has(key) && line.length <= 180) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return removeRepeatedOcrPhrases(cleanedLines.join('\n'))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+type SpeechLanguage = 'Swedish' | 'English' | 'Spanish';
+
+const SWEDISH_SPEECH_HINT_PATTERN = /[åäö]|\b(och|att|det|som|för|med|inte|är|ska|kan|till|från|har|vara|var|blir|blev|den|detta|dessa|också|finns|sker|själv|genom|mellan|under|över|efter|före|många|människor|samhälle|kunskap|exempel|kapitel|fråga|svar)\b/gi;
+const ENGLISH_SPEECH_HINT_PATTERN = /\b(the|and|with|from|into|about|that|this|these|those|are|was|were|have|has|lecture|lesson|title|chapter|summary|overview|research|study|learning|introduction|method|results)\b/gi;
+const SPANISH_SPEECH_HINT_PATTERN = /[ñáéíóúü]|\b(el|la|los|las|que|con|para|como|del|una|uno|esta|este|estos|estas|más|porque|también|entre|sobre|capítulo|resumen|estudio)\b/gi;
 const ENGLISH_TITLE_KEYWORDS = new Set([
   'analysis',
   'chapter',
@@ -1179,26 +1762,51 @@ const countPatternMatches = (value: string, pattern: RegExp) =>
 const countMatchingCharacters = (value: string, pattern: RegExp) =>
   value.match(pattern)?.length ?? 0;
 
-const detectPrimarySpeechLanguage = (text: string) => {
+const detectSpeechLanguage = (text: string, minLead = 2): SpeechLanguage | undefined => {
   const sample = text.slice(0, 5000);
   const swedishScore = countPatternMatches(sample, SWEDISH_SPEECH_HINT_PATTERN) * 2
     + countMatchingCharacters(sample, /[åäö]/gi) * 3;
   const englishScore = countPatternMatches(sample, ENGLISH_SPEECH_HINT_PATTERN) * 2;
   const spanishScore = countPatternMatches(sample, SPANISH_SPEECH_HINT_PATTERN) * 2;
 
-  if (swedishScore >= englishScore + 2 && swedishScore >= spanishScore + 2) {
+  if (swedishScore >= englishScore + minLead && swedishScore >= spanishScore + minLead) {
     return 'Swedish';
   }
 
-  if (englishScore >= swedishScore + 2 && englishScore >= spanishScore + 2) {
+  if (englishScore >= swedishScore + minLead && englishScore >= spanishScore + minLead) {
     return 'English';
   }
 
-  if (spanishScore >= swedishScore + 2 && spanishScore >= englishScore + 2) {
+  if (spanishScore >= swedishScore + minLead && spanishScore >= englishScore + minLead) {
     return 'Spanish';
   }
 
   return undefined;
+};
+
+const detectPrimarySpeechLanguage = (text: string) => detectSpeechLanguage(text, 2);
+
+const getSpeechLanguageTag = (language: SpeechLanguage) => {
+  switch (language) {
+    case 'Swedish':
+      return 'sv';
+    case 'English':
+      return 'en';
+    case 'Spanish':
+      return 'es';
+  }
+};
+
+const applyPronunciationDictionary = (text: string, language?: SpeechLanguage) => {
+  if (language !== 'Swedish') {
+    return text;
+  }
+
+  return text
+    .replace(/\b[Dd]om\b/g, 'de')
+    .replace(/\b[Dd]omarna\b/g, 'dommarna')
+    .replace(/\b[Dd]omar\b/g, 'dommar')
+    .replace(/\b[Dd]omen\b/g, 'dommen');
 };
 
 const isLikelyNoiseToken = (token: string) => {
@@ -1262,6 +1870,27 @@ const stripNoiseFromSpeechLine = (line: string) => {
   );
 };
 
+const normalizeTextForTTS = (text: string, language?: SpeechLanguage) => {
+  let normalized = text
+    .replace(/\b([A-ZÅÄÖ])\s+(?=[A-ZÅÄÖ]\b)/g, '$1')
+    .replace(/\b0CR\b/gi, 'OCR')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([([{])\s+/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+	  if (language === 'Swedish') {
+	    normalized = normalized
+	      .replace(/\boch\/eller\b/gi, 'och eller')
+	      .replace(/\bt\.ex\./gi, 'till exempel')
+	      .replace(/\bdvs\./gi, 'det vill säga')
+	      .replace(/\bbl\.a\./gi, 'bland annat')
+	      .replace(/\bm\.m\./gi, 'med mera');
+	  }
+
+	  return applyPronunciationDictionary(normalized, language);
+	};
+
 const buildSpeechSourceText = (text: string, stripNoise: boolean) => {
   const normalizedLines = text
     .split(/\r?\n/)
@@ -1287,13 +1916,11 @@ const looksLikeEnglishTitleLine = (line: string) => {
   }
 
   const keywordHits = words.filter(word => ENGLISH_TITLE_KEYWORDS.has(word.toLowerCase())).length;
-  return keywordHits >= 2;
-};
+	  return keywordHits >= 2;
+	};
 
-const buildSpeechRequestText = (text: string, stripNoise: boolean) => {
-  const sourceText = buildSpeechSourceText(text, stripNoise);
-  const languageHint = detectPrimarySpeechLanguage(sourceText);
-  const speechText = sourceText
+const tagSpeechTextForPronunciation = (text: string, primaryLanguage?: SpeechLanguage) =>
+  text
     .split(/\r?\n/)
     .map((line) => {
       const trimmedLine = line.trim();
@@ -1301,16 +1928,26 @@ const buildSpeechRequestText = (text: string, stripNoise: boolean) => {
         return '';
       }
 
-      if (languageHint === 'Swedish') {
-        return looksLikeEnglishTitleLine(trimmedLine)
-          ? `<en>${trimmedLine}</en>`
-          : `<sv>${trimmedLine}</sv>`;
+      if (primaryLanguage === 'Swedish' && looksLikeEnglishTitleLine(trimmedLine)) {
+        return `<en>${normalizeTextForTTS(trimmedLine, 'English')}</en>`;
       }
 
-      return trimmedLine;
+      const lineLanguage = detectSpeechLanguage(trimmedLine, 1) ?? primaryLanguage;
+      const normalizedLine = normalizeTextForTTS(trimmedLine, lineLanguage);
+      if (!lineLanguage) {
+        return normalizedLine;
+      }
+
+      const tag = getSpeechLanguageTag(lineLanguage);
+      return `<${tag}>${normalizedLine}</${tag}>`;
     })
     .join('\n')
     .trim();
+
+const buildSpeechRequestText = (text: string, stripNoise: boolean) => {
+  const sourceText = buildSpeechSourceText(text, stripNoise);
+  const languageHint = detectPrimarySpeechLanguage(sourceText);
+  const speechText = tagSpeechTextForPronunciation(sourceText, languageHint);
 
   return {
     sourceText,
@@ -1414,7 +2051,7 @@ const buildSummaryFallbackCore = (
   titleOverride?: string
 ): EpisodeNotes => {
   const labels = getNotesLabels(userLang);
-  const readableText = buildReadableSourceText(text);
+  const readableText = buildReadableSourceText(cleanOcrText(text));
   const firstLine = titleOverride
     || readableText
       .split(/\r?\n/)
@@ -1489,6 +2126,7 @@ const sanitizeEpisodeNotes = (
   const seenBullets = new Set<string>();
   const mainSections = notes.sections
     .filter(section => !PERSONAL_NOTES_HEADINGS.has(normalizeInlineText(section.heading).toLowerCase()))
+    .filter(section => !isStudyQuestionHeading(section.heading))
     .map((section, index) => {
       const fallbackHeading = fallback.sections[index]?.heading
         ?? (index === 0 ? getNotesLabels(userLang).highlights : getNotesLabels(userLang).details);
@@ -1546,7 +2184,7 @@ const normalizeEpisodeNotes = (
 };
 
 const buildNotesSourceText = (text: string) => {
-  const trimmed = buildReadableSourceText(text);
+  const trimmed = buildReadableSourceText(cleanOcrText(text));
   if (trimmed.length <= MAX_NOTES_SOURCE_CHARACTERS) {
     return trimmed;
   }
@@ -1560,15 +2198,6 @@ const buildNotesSourceText = (text: string) => {
   return [head, middle, tail]
     .filter(Boolean)
     .join('\n\n[...]\n\n');
-};
-
-const buildFallbackEpisodeNotes = (
-  text: string,
-  personalNotes: string,
-  userLang: string
-): EpisodeNotes => {
-  const fallback = buildSummaryFallbackCore(text, userLang);
-  return mergeGeneratedAndPersonalNotes(fallback, personalNotes, userLang);
 };
 
 const polishEpisodeNotes = (
@@ -1707,7 +2336,7 @@ const buildEpisodeSummaryPlaybackText = (
 ) => {
   const notes = normalizeEpisodeNotes(episode.notes, userLang);
   if (!notes) {
-    return truncateText(episode.text, MAX_SUMMARY_AUDIO_CHARACTERS);
+    return '';
   }
 
   const bulletLines = notes.sections
@@ -1791,7 +2420,10 @@ const App: React.FC = () => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showUsagePanel, setShowUsagePanel] = useState(false);
+  const [showUsageDetails, setShowUsageDetails] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState<PodcastEpisode | null>(null);
+  const [summaryGenerationEpisodeId, setSummaryGenerationEpisodeId] = useState<string | null>(null);
   const [pendingDeleteEpisode, setPendingDeleteEpisode] = useState<PodcastEpisode | null>(null);
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [summaryTitleDraft, setSummaryTitleDraft] = useState('');
@@ -1800,6 +2432,8 @@ const App: React.FC = () => {
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [categoryDraft, setCategoryDraft] = useState('');
+  const [episodeTextDraft, setEpisodeTextDraft] = useState('');
+  const [episodeEditorTab, setEpisodeEditorTab] = useState<'details' | 'text'>('details');
   const [linkImportUrl, setLinkImportUrl] = useState('');
   const [librarySortMode, setLibrarySortMode] = useState<LibrarySortMode>('newest');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
@@ -1822,7 +2456,9 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [error, setError] = useState<string | null>(null);
+  const [appError, setAppError] = useState<ClassifiedAppError | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [aiUsage, setAiUsage] = useState<AiUsageState>(() => readPersistedAiUsage(null));
   const [playerInset, setPlayerInset] = useState(0);
   const [isPlayerCollapsed, setIsPlayerCollapsed] = useState(false);
   const [showCameraCapture, setShowCameraCapture] = useState(false);
@@ -1830,6 +2466,7 @@ const App: React.FC = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraBooting, setIsCameraBooting] = useState(false);
   const [isCameraImporting, setIsCameraImporting] = useState(false);
+  const [currentRoutePath, setCurrentRoutePath] = useState(getCurrentRoutePath);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -1840,6 +2477,7 @@ const App: React.FC = () => {
   const langMenuRef = useRef<HTMLDivElement>(null);
   const voiceMenuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const usagePanelRef = useRef<HTMLDivElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
   const playRequestRef = useRef(0);
   const [searchBuffer, setSearchBuffer] = useState('');
@@ -1862,10 +2500,15 @@ const App: React.FC = () => {
   // Cache for pre-loaded chunks to prevent gaps
   const chunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
   const summaryChunkCache = useRef<Map<string, ArrayBuffer>>(new Map());
+  const summaryGenerationRequestsRef = useRef<Map<string, Promise<PodcastEpisode | null>>>(new Map());
   const summaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const summaryBlobUrlRef = useRef<string | null>(null);
   const summaryRequestRef = useRef(0);
   const libraryRef = useRef<PodcastEpisode[]>([]);
+  const playerRef = useRef<PlayerState | null>(null);
+  const isLoadingChunkRef = useRef(false);
+  const isSwitchingChunkRef = useRef(false);
+  const chunkSwitchTimeoutRef = useRef<number | null>(null);
   const libraryPersistTimeoutRef = useRef<number | null>(null);
   const cloudSyncTimeoutRef = useRef<number | null>(null);
   const cloudUploadRunRef = useRef(0);
@@ -1874,6 +2517,7 @@ const App: React.FC = () => {
   const importSessionRef = useRef<ImportSessionState | null>(null);
   const liveGenerationRef = useRef<LiveGenerationState | null>(null);
   const liveGenerationPumpRef = useRef(false);
+  const intendedRouteRef = useRef(DEFAULT_AUTHENTICATED_PATH);
 
   const [player, setPlayer] = useState<PlayerState>({
     isPlaying: false,
@@ -1883,6 +2527,34 @@ const App: React.FC = () => {
     activeEpisode: null,
     currentChunkIndex: 0
   });
+
+	  useEffect(() => {
+	    playerRef.current = player;
+	  }, [player]);
+
+	  useEffect(() => {
+	    setAiUsage(readPersistedAiUsage(authUser?.id ?? null));
+	    setShowUsagePanel(false);
+	    setShowUsageDetails(false);
+	  }, [authUser?.id]);
+
+	  useEffect(() => {
+	    writePersistedAiUsage(aiUsage, authUser?.id ?? null);
+	  }, [aiUsage, authUser?.id]);
+
+  useEffect(() => {
+    isLoadingChunkRef.current = isLoadingChunk;
+  }, [isLoadingChunk]);
+
+  const navigateToAuthRoute = (path: string) => {
+    pushRoute(path);
+    setCurrentRoutePath(getCurrentRoutePath());
+  };
+
+  const replaceWithRoute = (path: string) => {
+    replaceRoute(path);
+    setCurrentRoutePath(getCurrentRoutePath());
+  };
 
   const stopCameraStream = () => {
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -1929,6 +2601,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (player.activeEpisode) {
       setIsPlayerCollapsed(false);
+      setShowSortMenu(false);
     }
   }, [player.activeEpisode?.id]);
 
@@ -1937,6 +2610,48 @@ const App: React.FC = () => {
       setShowSpeedControls(false);
     }
   }, [isPlayerCollapsed]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentRoutePath(getCurrentRoutePath());
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (currentRoutePath === SIGNUP_PATH) {
+      setAuthMode('signUp');
+    } else if (currentRoutePath === LOGIN_PATH) {
+      setAuthMode('signIn');
+    }
+  }, [currentRoutePath]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    if (!authUser) {
+      if (!isPublicAuthPath(currentRoutePath)) {
+        const intendedRoute = getCurrentRouteWithSearch();
+        intendedRouteRef.current = intendedRoute;
+        replaceWithRoute(`${LOGIN_PATH}?redirect=${encodeURIComponent(intendedRoute)}`);
+        return;
+      }
+
+      const redirect = getRedirectParam();
+      if (redirect) {
+        intendedRouteRef.current = redirect;
+      }
+      setShowAuthPanel(false);
+      return;
+    }
+
+    if (isPublicAuthPath(currentRoutePath)) {
+      const redirect = getRedirectParam() ?? intendedRouteRef.current ?? DEFAULT_AUTHENTICATED_PATH;
+      replaceWithRoute(redirect);
+    }
+  }, [authUser, currentRoutePath, isAuthReady]);
 
   useEffect(() => {
     if (!supabase) {
@@ -2030,15 +2745,19 @@ const App: React.FC = () => {
         setShowVoiceMenu(false);
       }
 
-      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
-        setShowSortMenu(false);
-      }
-    };
-    if (showLangMenu || showVoiceMenu || showSortMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showLangMenu, showVoiceMenu, showSortMenu]);
+	      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+	        setShowSortMenu(false);
+	      }
+
+	      if (usagePanelRef.current && !usagePanelRef.current.contains(event.target as Node)) {
+	        setShowUsagePanel(false);
+	      }
+	    };
+	    if (showLangMenu || showVoiceMenu || showSortMenu || showUsagePanel) {
+	      document.addEventListener('mousedown', handleClickOutside);
+	    }
+	    return () => document.removeEventListener('mousedown', handleClickOutside);
+	  }, [showLangMenu, showVoiceMenu, showSortMenu, showUsagePanel]);
 
   // Focus the menu when it opens to enable keyboard shortcuts
   useEffect(() => {
@@ -2064,24 +2783,29 @@ const App: React.FC = () => {
     setSummaryBodyDraft(notes.summary);
   }, [showNotesModal?.id, showNotesModal?.notes, userLang]);
 
-  useEffect(() => {
-    if (!editingEpisodeId) {
-      setEpisodeTitleDraft('');
-      setCategoryDraft('');
-      return;
-    }
+	  useEffect(() => {
+	    if (!editingEpisodeId) {
+	      setEpisodeTitleDraft('');
+	      setCategoryDraft('');
+	      setEpisodeTextDraft('');
+	      setEpisodeEditorTab('details');
+	      return;
+	    }
 
-    const episode = library.find((candidate) => candidate.id === editingEpisodeId);
-    if (!episode) {
-      setEditingEpisodeId(null);
-      setEpisodeTitleDraft('');
-      setCategoryDraft('');
-      return;
-    }
+	    const episode = library.find((candidate) => candidate.id === editingEpisodeId);
+	    if (!episode) {
+	      setEditingEpisodeId(null);
+	      setEpisodeTitleDraft('');
+	      setCategoryDraft('');
+	      setEpisodeTextDraft('');
+	      setEpisodeEditorTab('details');
+	      return;
+	    }
 
-    setEpisodeTitleDraft(episode.title);
-    setCategoryDraft(getEpisodeCategories(episode).join(', '));
-  }, [editingEpisodeId]);
+	    setEpisodeTitleDraft(episode.title);
+	    setCategoryDraft(getEpisodeCategories(episode).join(', '));
+	    setEpisodeTextDraft(episode.text);
+	  }, [editingEpisodeId, library]);
 
   useEffect(() => {
     if (activeCategoryFilter === 'all') {
@@ -2215,6 +2939,10 @@ const App: React.FC = () => {
     return () => {
       stopCameraStream();
       revokeCameraShotPreviews(cameraShotsRef.current);
+      if (chunkSwitchTimeoutRef.current !== null) {
+        window.clearTimeout(chunkSwitchTimeoutRef.current);
+        chunkSwitchTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -2227,6 +2955,54 @@ const App: React.FC = () => {
       setRetryNotice(online ? t('retrying') : t('waiting_for_network'));
     }
   });
+
+  const showParsedError = (errorValue: unknown, context?: string | AiRequestContext) => {
+    const parsed = parseAppError(errorValue, context);
+    console.error('VoxPod classified error', parsed, errorValue);
+    setAppError(parsed);
+    setError(parsed.message);
+    return parsed;
+  };
+
+  const copyAppErrorDetails = async () => {
+    if (!appError || typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(
+      [
+        `Code: ${appError.code}`,
+        `Title: ${appError.title}`,
+        `Message: ${appError.message}`,
+        '',
+        appError.technicalDetails
+      ].join('\n')
+    );
+  };
+
+  const retryAppErrorAction = () => {
+    const code = appError?.code;
+    setAppError(null);
+    setError(null);
+
+    if (code === 'AUTH') {
+      void handleSignOut();
+      return;
+    }
+
+	    if (inputText.trim() && !isBusy) {
+	      void handleGenerate();
+	    }
+	  };
+
+	  const useSmallerPodcastFromError = () => {
+	    const trimmedText = inputText.trim();
+	    if (trimmedText.length > 0) {
+	      setInputText(truncateText(trimmedText, 1400));
+	    }
+	    setAppError(null);
+	    setError(null);
+	  };
 
   const readImportTextCache = async (file: File) => {
     try {
@@ -2358,6 +3134,61 @@ const App: React.FC = () => {
     return nextLibrary;
   };
 
+	  const logPlayback = (event: string, details?: Record<string, unknown>) => {
+	    console.info(`[VoxPod playback] ${event}`, details ?? {});
+	  };
+
+	  const markEpisodePartiallyReady = (
+	    episodeId: string,
+	    generatedCount: number,
+	    generatedDurations: number[]
+	  ) => {
+	    if (generatedCount <= 0) {
+	      patchEpisode(episodeId, {
+	        generationStatus: 'failed',
+	        readyChunkCount: 0,
+	      });
+	      return;
+	    }
+
+	    const readyDurations = generatedDurations.slice(0, generatedCount);
+	    patchEpisode(episodeId, {
+	      generationStatus: 'ready',
+	      readyChunkCount: generatedCount,
+	      chunkCount: generatedCount,
+	      chunkDurations: readyDurations,
+	      duration: sumDurations(readyDurations),
+	    });
+	  };
+
+	  const beginChunkSwitch = (event: string, details?: Record<string, unknown>) => {
+    if (chunkSwitchTimeoutRef.current !== null) {
+      window.clearTimeout(chunkSwitchTimeoutRef.current);
+    }
+
+    isSwitchingChunkRef.current = true;
+    logPlayback(event, details);
+    chunkSwitchTimeoutRef.current = window.setTimeout(() => {
+      isSwitchingChunkRef.current = false;
+      chunkSwitchTimeoutRef.current = null;
+    }, 8000);
+  };
+
+  const endChunkSwitch = (event: string, details?: Record<string, unknown>) => {
+    if (chunkSwitchTimeoutRef.current !== null) {
+      window.clearTimeout(chunkSwitchTimeoutRef.current);
+      chunkSwitchTimeoutRef.current = null;
+    }
+
+    isSwitchingChunkRef.current = false;
+    logPlayback(event, details);
+  };
+
+  const getChunkLoadTimeoutMs = (episode: PodcastEpisode, index: number) =>
+    episode.generationStatus === 'processing' && !isEpisodeChunkReady(episode, index)
+      ? CHUNK_GENERATION_LOAD_TIMEOUT_MS
+      : CHUNK_LOAD_TIMEOUT_MS;
+
   const uploadEpisodeChunkToCloud = (audioBlobId: string, index: number, wavBuffer: ArrayBuffer) => {
     const upload = beginCloudUpload();
     if (!upload) return;
@@ -2394,6 +3225,13 @@ const App: React.FC = () => {
 
   const loadChunkFromLocalOrCloud = async (episode: PodcastEpisode, index: number) => {
     const cacheKey = `${episode.audioBlobId}_${index}`;
+    logPlayback('chunk requested', {
+      episodeId: episode.id,
+      index,
+      readyChunkCount: episode.readyChunkCount,
+      chunkCount: episode.chunkCount,
+      status: episode.generationStatus,
+    });
     let data = chunkCache.current.get(cacheKey);
     if (!data) {
       data = await getAudioBlob(cacheKey) ?? undefined;
@@ -2408,9 +3246,21 @@ const App: React.FC = () => {
 
     if (data) {
       chunkCache.current.set(cacheKey, data);
+      logPlayback('chunk loaded', {
+        episodeId: episode.id,
+        index,
+        bytes: data.byteLength,
+      });
       return data;
     }
 
+    logPlayback('chunk unavailable', {
+      episodeId: episode.id,
+      index,
+      readyChunkCount: episode.readyChunkCount,
+      chunkCount: episode.chunkCount,
+      status: episode.generationStatus,
+    });
     return null;
   };
 
@@ -2418,11 +3268,24 @@ const App: React.FC = () => {
     libraryRef.current.find(candidate => candidate.id === episode.id) ?? episode;
 
   const pauseForUnavailableChunk = (episode: PodcastEpisode, index: number, message: string, markFailed = false) => {
+    const nextChunkIndex = clamp(index, 0, Math.max(0, episode.chunkCount - 1));
+    logPlayback('playback paused for unavailable chunk', {
+      episodeId: episode.id,
+      requestedIndex: index,
+      nextChunkIndex,
+      message,
+      markFailed,
+      readyChunkCount: episode.readyChunkCount,
+      chunkCount: episode.chunkCount,
+      status: episode.generationStatus,
+    });
     pauseAudio();
     setMediaSessionPlaybackState(false);
     setPlayer(prev => ({
       ...prev,
       isPlaying: false,
+      currentChunkIndex: nextChunkIndex,
+      currentTime: getEpisodeOffset(episode, nextChunkIndex),
       activeEpisode: prev.activeEpisode?.id === episode.id
         ? {
             ...prev.activeEpisode,
@@ -2441,11 +3304,19 @@ const App: React.FC = () => {
     setError(message);
   };
 
-  const startImportSession = (source: ImportSource) => {
+  const shouldReplaceExistingImportText = () => {
+    if (!inputText.trim()) {
+      return false;
+    }
+
+    return window.confirm(t('import_replace_confirm'));
+  };
+
+  const startImportSession = (source: ImportSource, replaceExistingText: boolean = false) => {
     const session: ImportSessionState = {
       id: crypto.randomUUID(),
       source,
-      baseText: inputText,
+      baseText: replaceExistingText ? '' : inputText,
       text: '',
       isComplete: false,
     };
@@ -2615,16 +3486,55 @@ const App: React.FC = () => {
     };
 
     const handleAudioError = () => {
-      if (!player.activeEpisode) return;
+      const currentPlayer = playerRef.current;
+      if (!currentPlayer?.activeEpisode) return;
+      logPlayback('audio error', {
+        episodeId: currentPlayer.activeEpisode.id,
+        currentChunkIndex: currentPlayer.currentChunkIndex,
+        error: el.error?.message,
+        code: el.error?.code,
+      });
       pauseForUnavailableChunk(
-        getLatestEpisodeSnapshot(player.activeEpisode),
-        player.currentChunkIndex,
+        getLatestEpisodeSnapshot(currentPlayer.activeEpisode),
+        currentPlayer.currentChunkIndex,
         t('playback_failed')
       );
     };
 
+    const handleUnexpectedPause = () => {
+      window.setTimeout(() => {
+        const currentPlayer = playerRef.current;
+        if (
+          !currentPlayer?.activeEpisode ||
+          !currentPlayer.isPlaying ||
+          isLoadingChunkRef.current ||
+          isSwitchingChunkRef.current ||
+          !el.paused
+        ) {
+          return;
+        }
+
+        const chunkTime = el.currentTime || 0;
+        if (isEpisodeAtEnd(currentPlayer.activeEpisode, currentPlayer.currentChunkIndex, chunkTime)) {
+          return;
+        }
+
+        logPlayback('stalled from unexpected pause', {
+          episodeId: currentPlayer.activeEpisode.id,
+          currentChunkIndex: currentPlayer.currentChunkIndex,
+          chunkTime,
+        });
+        pauseForUnavailableChunk(
+          getLatestEpisodeSnapshot(currentPlayer.activeEpisode),
+          currentPlayer.currentChunkIndex,
+          t('playback_stalled')
+        );
+      }, 300);
+    };
+
     const watchdog = window.setInterval(() => {
-      if (!player.activeEpisode || el.paused || isLoadingChunk) {
+      const currentPlayer = playerRef.current;
+      if (!currentPlayer?.activeEpisode || el.paused || isLoadingChunkRef.current || isSwitchingChunkRef.current) {
         lastObservedTime = el.currentTime || 0;
         lastProgressAt = Date.now();
         return;
@@ -2635,9 +3545,15 @@ const App: React.FC = () => {
         return;
       }
 
+      logPlayback('stalled from watchdog', {
+        episodeId: currentPlayer.activeEpisode.id,
+        currentChunkIndex: currentPlayer.currentChunkIndex,
+        elapsedMs: Date.now() - lastProgressAt,
+        currentTime: el.currentTime || 0,
+      });
       pauseForUnavailableChunk(
-        getLatestEpisodeSnapshot(player.activeEpisode),
-        player.currentChunkIndex,
+        getLatestEpisodeSnapshot(currentPlayer.activeEpisode),
+        currentPlayer.currentChunkIndex,
         t('playback_stalled')
       );
     }, 1000);
@@ -2646,6 +3562,9 @@ const App: React.FC = () => {
     el.addEventListener('playing', markProgress);
     el.addEventListener('canplay', markProgress);
     el.addEventListener('error', handleAudioError);
+    el.addEventListener('stalled', handleUnexpectedPause);
+    el.addEventListener('waiting', handleUnexpectedPause);
+    el.addEventListener('pause', handleUnexpectedPause);
 
     return () => {
       window.clearInterval(watchdog);
@@ -2653,18 +3572,19 @@ const App: React.FC = () => {
       el.removeEventListener('playing', markProgress);
       el.removeEventListener('canplay', markProgress);
       el.removeEventListener('error', handleAudioError);
+      el.removeEventListener('stalled', handleUnexpectedPause);
+      el.removeEventListener('waiting', handleUnexpectedPause);
+      el.removeEventListener('pause', handleUnexpectedPause);
     };
-  }, [player.activeEpisode, player.currentChunkIndex, isLoadingChunk, userLang]);
+  }, [userLang]);
 
   useEffect(() => {
     if (!isAuthReady) return;
 
-    const cachedLibrary = readPersistedLibrary(authUser?.id);
-    libraryRef.current = cachedLibrary;
-    setLibrary(cachedLibrary);
-    hasHydratedLibraryRef.current = true;
-
     if (!authUser || !supabase) {
+      libraryRef.current = [];
+      setLibrary([]);
+      hasHydratedLibraryRef.current = false;
       cloudUploadRunRef.current += 1;
       pendingCloudUploadsRef.current = 0;
       setIsCloudSyncing(false);
@@ -2678,6 +3598,11 @@ const App: React.FC = () => {
       );
       return;
     }
+
+    const cachedLibrary = readPersistedLibrary(authUser.id);
+    libraryRef.current = cachedLibrary;
+    setLibrary(cachedLibrary);
+    hasHydratedLibraryRef.current = true;
 
     let cancelled = false;
     setIsCloudSyncing(true);
@@ -2790,19 +3715,40 @@ const App: React.FC = () => {
   useEffect(() => {
     const el = initAudioElement();
     const handleEnd = () => {
-      if (player.activeEpisode && player.currentChunkIndex < player.activeEpisode.chunkCount - 1) {
-        const latestEpisode = getLatestEpisodeSnapshot(player.activeEpisode);
-        const nextIndex = player.currentChunkIndex + 1;
+      const currentPlayer = playerRef.current;
+      const activeEpisode = currentPlayer?.activeEpisode;
+      if (!activeEpisode) {
+        return;
+      }
+
+      logPlayback('ended', {
+        episodeId: activeEpisode.id,
+        currentChunkIndex: currentPlayer.currentChunkIndex,
+        chunkCount: activeEpisode.chunkCount,
+      });
+
+      if (currentPlayer.currentChunkIndex < activeEpisode.chunkCount - 1) {
+        const latestEpisode = getLatestEpisodeSnapshot(activeEpisode);
+        const nextIndex = currentPlayer.currentChunkIndex + 1;
         if (latestEpisode.generationStatus === 'processing' && !isEpisodeChunkReady(latestEpisode, nextIndex)) {
+          logPlayback('ended waiting for next generated chunk', {
+            episodeId: latestEpisode.id,
+            nextIndex,
+            readyChunkCount: latestEpisode.readyChunkCount,
+            chunkCount: latestEpisode.chunkCount,
+          });
           pauseForUnavailableChunk(latestEpisode, nextIndex, t('playback_chunk_waiting'));
           return;
         }
 
+        beginChunkSwitch('ended switching chunk', {
+          episodeId: latestEpisode.id,
+          fromIndex: currentPlayer.currentChunkIndex,
+          toIndex: nextIndex,
+        });
         void playChunk(latestEpisode, nextIndex);
       } else {
-        if (player.activeEpisode) {
-          saveBookmark(player.activeEpisode.id, 0, 0);
-        }
+        saveBookmark(activeEpisode.id, 0, 0);
         setPlayer(prev => ({ ...prev, isPlaying: false, currentTime: prev.duration }));
         setMediaSessionPlaybackState(false);
       }
@@ -2810,7 +3756,7 @@ const App: React.FC = () => {
     el.addEventListener('ended', handleEnd);
 
     return () => el.removeEventListener('ended', handleEnd);
-  }, [player.activeEpisode, player.currentChunkIndex]);
+  }, [userLang]);
 
   const chunkText = (text: string) => {
     const paragraphs = text.split(/\n+/).filter(p => p.trim());
@@ -2859,30 +3805,108 @@ const App: React.FC = () => {
     return chunks;
   };
 
-  const buildChunkAudio = async (textChunk: string, voice: VoiceName) => {
-    const speechRequest = buildSpeechRequestText(textChunk, false);
-    if (!speechRequest.speechText) {
-      throw new Error(t('speech_cleanup_empty_error'));
+	  const buildChunkAudio = async (
+	    textChunk: string,
+	    voice: VoiceName,
+	    usageContext?: {
+	      episodeId: string;
+	      chunkIndex: number;
+	    }
+	  ) => {
+	    const speechRequest = buildSpeechRequestText(textChunk, false);
+	    if (!speechRequest.speechText) {
+	      throw new Error(t('speech_cleanup_empty_error'));
+	    }
+
+	    const contentCacheKey = await buildTtsContentCacheKey(speechRequest.speechText, voice, speechRequest.languageHint);
+	    const cachedWavBuffer = await getAudioBlob(contentCacheKey);
+	    if (cachedWavBuffer) {
+	      return {
+	        wavBuffer: cachedWavBuffer,
+	        duration: estimateWavDurationSeconds(cachedWavBuffer) || estimateEpisodeDurationSeconds(speechRequest.speechText),
+	        usage: undefined,
+	      };
+	    }
+
+    setRetryNotice(null);
+    let ttsResult: Awaited<ReturnType<typeof generateTTS>>;
+    try {
+      ttsResult = await generateTTS(
+        speechRequest.speechText,
+        voice,
+        undefined,
+        {
+          ...makeRetryOptions(),
+          languageHint: speechRequest.languageHint,
+          usageContext: usageContext
+            ? {
+                ...usageContext,
+                usageCategory: 'podcast_audio',
+              }
+            : undefined,
+        }
+      );
+    } catch (error) {
+      throw withAiRequestContext(error, {
+        functionName: 'podcast_tts_chunk',
+        kind: 'TTS',
+        provider: 'Gemini',
+        model: 'gemini-2.5-flash-preview-tts',
+        textLength: speechRequest.speechText.length,
+      });
     }
-
     setRetryNotice(null);
-    const base64 = await generateTTS(
-      speechRequest.speechText,
-      voice,
-      undefined,
-      {
-        ...makeRetryOptions(),
-        languageHint: speechRequest.languageHint,
-      }
-    );
-    setRetryNotice(null);
-    const pcmBytes = decodeBase64ToUint8(base64);
+    const pcmBytes = decodeBase64ToUint8(ttsResult.audio);
 
-    return {
-      wavBuffer: pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE),
-      duration: calculateChunkDurationSeconds(pcmBytes, AUDIO_SAMPLE_RATE)
-    };
-  };
+	    const duration = calculateChunkDurationSeconds(pcmBytes, AUDIO_SAMPLE_RATE);
+	    const wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
+	    recordAiUsage('tts', speechRequest.speechText, {
+	      audioSeconds: duration,
+	      model: 'gemini-2.5-flash-preview-tts',
+	    });
+	    await saveAudioBlob(contentCacheKey, wavBuffer);
+
+	    return {
+	      wavBuffer,
+	      duration,
+	      usage: ttsResult.usage,
+	    };
+	  };
+
+	  const recordAiUsage = (
+	    kind: AiUsageKind,
+	    inputTextValue: string,
+	    options?: {
+	      outputTextValue?: string;
+	      audioSeconds?: number;
+	      model?: string;
+	    }
+	  ) => {
+	    const audioSeconds = Math.max(0, options?.audioSeconds ?? 0);
+	    const outputTokens = options?.outputTextValue
+	      ? estimateTextTokens(options.outputTextValue)
+	      : audioSeconds > 0
+	        ? Math.ceil(audioSeconds * ESTIMATED_AUDIO_TOKENS_PER_SECOND)
+	        : Math.max(250, Math.ceil(estimateTextTokens(inputTextValue) * 0.35));
+
+	    const entry: AiUsageEntry = {
+	      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+	      kind,
+	      inputTokens: estimateTextTokens(inputTextValue),
+	      outputTokens,
+	      audioSeconds: audioSeconds || undefined,
+	      model: options?.model ?? (kind === 'tts' ? 'gemini-2.5-flash-preview-tts' : 'gemini-3-flash-preview'),
+	      createdAt: Date.now(),
+	    };
+
+	    setAiUsage((current) => {
+	      const normalized = normalizeAiUsageState(current);
+	      return {
+	        ...normalized,
+	        entries: [...normalized.entries, entry].slice(-AI_USAGE_HISTORY_LIMIT),
+	      };
+	    });
+	  };
 
   const getImportChunkWindow = (sourceText: string, isComplete: boolean) => {
     const narrationText = buildSpeechSourceText(sourceText, useSpeechCleanup);
@@ -2900,12 +3924,11 @@ const App: React.FC = () => {
   const syncLiveGenerationProgress = (
     sourceText: string,
     generatedCount: number,
-    notesCompleted: boolean,
     isComplete: boolean
   ) => {
     const projectedChunks = Math.max(1, getImportChunkWindow(sourceText, isComplete).projectedChunkCount);
-    const total = projectedChunks + (notesCompleted ? 0 : 1);
-    const current = Math.min(total, generatedCount + (notesCompleted ? 1 : 0));
+    const total = projectedChunks;
+    const current = Math.min(total, generatedCount);
 
     setGenerationProgress({
       current,
@@ -2915,8 +3938,9 @@ const App: React.FC = () => {
     setGenerationSession(prev => prev ? {
       ...prev,
       totalSteps: total,
-      estimatedSeconds: estimateGenerationSeconds(projectedChunks, !notesCompleted),
-      notesCompleted,
+      estimatedSeconds: estimateGenerationSeconds(projectedChunks, false),
+      notesIncluded: false,
+      notesCompleted: true,
     } : prev);
   };
 
@@ -2944,7 +3968,6 @@ const App: React.FC = () => {
         }
 
         const { narrationText, allChunks, finalizedCount, projectedChunkCount } = getImportChunkWindow(trimmedText, source.isComplete);
-        const shouldGenerateNotes = trimmedText.length > 0;
 
         if (!narrationText) {
           if (source.isComplete) {
@@ -2958,7 +3981,7 @@ const App: React.FC = () => {
 
         const requiredInitialReady = getRequiredLiveReadyChunks(allChunks, finalizedCount, source.isComplete);
 
-        syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+        syncLiveGenerationProgress(trimmedText, live.generatedCount, source.isComplete);
 
         if (!live.episodeCreated) {
           if (finalizedCount < requiredInitialReady) {
@@ -2972,21 +3995,23 @@ const App: React.FC = () => {
           }
 
           for (let index = live.generatedCount; index < requiredInitialReady; index++) {
-            const { wavBuffer, duration } = await buildChunkAudio(allChunks[index], live.voice);
+            const { wavBuffer, duration, usage } = await buildChunkAudio(allChunks[index], live.voice, {
+              episodeId: live.episodeId,
+              chunkIndex: index,
+            });
             await saveAudioBlob(`${live.episodeId}_${index}`, wavBuffer);
             chunkCache.current.set(`${live.episodeId}_${index}`, wavBuffer);
             uploadEpisodeChunkToCloud(live.episodeId, index, wavBuffer);
             live.generatedDurations[index] = duration;
             live.generatedCount = index + 1;
-            syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+            live.generationCost = appendGenerationCost(live.generationCost, usage);
+            syncLiveGenerationProgress(trimmedText, live.generatedCount, source.isComplete);
           }
 
-          const fallbackNotes = buildFallbackEpisodeNotes(trimmedText, inputNotes, userLang);
           const newEpisode: PodcastEpisode = {
             id: live.episodeId,
             title: live.title,
             text: trimmedText,
-            notes: fallbackNotes,
             bookmarks: [],
             categories: [],
             date: Date.now(),
@@ -2994,7 +4019,8 @@ const App: React.FC = () => {
             audioBlobId: live.episodeId,
             chunkCount: Math.max(projectedChunkCount, live.generatedCount),
             readyChunkCount: live.generatedCount,
-            generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
+            generationStatus: 'ready',
+            generationCost: live.generationCost,
             chunkDurations: [...live.generatedDurations],
             duration: estimateEpisodeDurationSeconds(narrationText),
             playbackRate: 1,
@@ -3023,24 +4049,29 @@ const App: React.FC = () => {
 
         if (live.generatedCount < finalizedCount) {
           const nextIndex = live.generatedCount;
-          const { wavBuffer, duration } = await buildChunkAudio(allChunks[nextIndex], live.voice);
+          const { wavBuffer, duration, usage } = await buildChunkAudio(allChunks[nextIndex], live.voice, {
+            episodeId: live.episodeId,
+            chunkIndex: nextIndex,
+          });
           await saveAudioBlob(`${live.episodeId}_${nextIndex}`, wavBuffer);
           chunkCache.current.set(`${live.episodeId}_${nextIndex}`, wavBuffer);
           uploadEpisodeChunkToCloud(live.episodeId, nextIndex, wavBuffer);
           live.generatedDurations[nextIndex] = duration;
           live.generatedCount = nextIndex + 1;
+          live.generationCost = appendGenerationCost(live.generationCost, usage);
 
           patchEpisode(live.episodeId, {
             text: trimmedText,
             readyChunkCount: live.generatedCount,
             chunkCount: Math.max(projectedChunkCount, live.generatedCount),
             chunkDurations: [...live.generatedDurations],
+            generationCost: live.generationCost,
             duration: source.isComplete
               ? Math.max(sumDurations(live.generatedDurations), estimateEpisodeDurationSeconds(narrationText))
               : estimateEpisodeDurationSeconds(narrationText),
           });
 
-          syncLiveGenerationProgress(trimmedText, live.generatedCount, false, source.isComplete);
+          syncLiveGenerationProgress(trimmedText, live.generatedCount, source.isComplete);
           continue;
         }
 
@@ -3054,50 +4085,32 @@ const App: React.FC = () => {
           chunkCount: allChunks.length,
           chunkDurations: [...live.generatedDurations],
           duration: sumDurations(live.generatedDurations),
-          generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
+          generationStatus: 'ready',
         });
 
-        if (shouldGenerateNotes) {
-          setIsGeneratingNotes(true);
-          try {
-            const generatedNotes = await generateNotes(buildNotesSourceText(trimmedText), makeRetryOptions());
-            setRetryNotice(null);
-            patchEpisode(live.episodeId, {
-              notes: polishEpisodeNotes(generatedNotes, trimmedText, inputNotes, userLang),
-              generationStatus: 'ready',
-              duration: sumDurations(live.generatedDurations),
-            });
-          } catch (error) {
-            console.error('Could not generate notes for the live import', error);
-            patchEpisode(live.episodeId, {
-              notes: buildFallbackEpisodeNotes(trimmedText, inputNotes, userLang),
-              generationStatus: 'ready',
-              duration: sumDurations(live.generatedDurations),
-            });
-          } finally {
-            setIsGeneratingNotes(false);
-          }
-        }
-
-        syncLiveGenerationProgress(trimmedText, allChunks.length, true, true);
+        syncLiveGenerationProgress(trimmedText, allChunks.length, true);
         liveGenerationRef.current = null;
         setIsGenerating(false);
         setGenerationSession(null);
         setRetryNotice(null);
         break;
       }
-    } catch (error) {
-      console.error('Live generation failed', error);
-      const live = liveGenerationRef.current;
-      if (live?.episodeCreated) {
-        patchEpisode(live.episodeId, {
-          generationStatus: 'failed',
-          readyChunkCount: live.generatedCount,
-          chunkDurations: [...live.generatedDurations],
-          duration: sumDurations(live.generatedDurations),
-        });
-      }
-      setError(error instanceof Error && error.message ? error.message : 'Could not create the podcast from the imported stream.');
+	    } catch (error) {
+	      console.error('Live generation failed', error);
+	      const live = liveGenerationRef.current;
+	      if (live?.episodeCreated) {
+	        if (isAiLimitError(error)) {
+	          markEpisodePartiallyReady(live.episodeId, live.generatedCount, live.generatedDurations);
+	        } else {
+	          patchEpisode(live.episodeId, {
+	            generationStatus: 'failed',
+	            readyChunkCount: live.generatedCount,
+	            chunkDurations: [...live.generatedDurations],
+	            duration: sumDurations(live.generatedDurations),
+	          });
+	        }
+	      }
+	      showParsedError(error, 'live podcast generation');
       liveGenerationRef.current = null;
       setIsGenerating(false);
       setIsGeneratingNotes(false);
@@ -3112,8 +4125,13 @@ const App: React.FC = () => {
     if (!inputText.trim() || isBusy) return;
     setIsGenerating(true);
     setError(null);
-    setRetryNotice(null);
-    let createdEpisodeId: string | null = null;
+	    setAppError(null);
+	    setRetryNotice(null);
+	    let createdEpisodeId: string | null = null;
+	    let partialEpisodeDraft: PodcastEpisode | null = null;
+	    let activeGeneratedCount = 0;
+	    let activeGeneratedDurations: number[] = [];
+	    let activeGenerationCost: EpisodeGenerationCost | undefined;
 
     try {
       const activeImportSession = importSessionRef.current;
@@ -3130,13 +4148,13 @@ const App: React.FC = () => {
         }
         const projectedChunks = Math.max(1, projectedChunkCount);
 
-        setGenerationProgress({ current: 0, total: projectedChunks + 1 });
+        setGenerationProgress({ current: 0, total: projectedChunks });
         setGenerationSession({
           startedAt: Date.now(),
-          estimatedSeconds: estimateGenerationSeconds(projectedChunks, true),
-          totalSteps: projectedChunks + 1,
-          notesIncluded: true,
-          notesCompleted: false,
+          estimatedSeconds: estimateGenerationSeconds(projectedChunks, false),
+          totalSteps: projectedChunks,
+          notesIncluded: false,
+          notesCompleted: true,
         });
 
         liveGenerationRef.current = {
@@ -3154,40 +4172,61 @@ const App: React.FC = () => {
         return;
       }
 
-      const id = crypto.randomUUID();
-      const narrationText = buildSpeechSourceText(inputText, useSpeechCleanup);
-      const chunks = chunkText(narrationText);
+	      const id = crypto.randomUUID();
+	      createdEpisodeId = id;
+	      const narrationText = buildSpeechSourceText(inputText, useSpeechCleanup);
+	      const chunks = chunkText(narrationText);
       if (chunks.length === 0) {
         setError(t('speech_cleanup_empty_error'));
         return;
       }
 
       const title = inputText.trim().split('\n')[0].substring(0, 40) || t('new_episode_title');
-      const shouldGenerateNotes = inputText.trim().length > 0;
-      const notesSourceText = buildNotesSourceText(inputText);
-      const fallbackNotes = buildFallbackEpisodeNotes(inputText, inputNotes, userLang);
-      const totalSteps = chunks.length + (shouldGenerateNotes ? 1 : 0);
+      const totalSteps = chunks.length;
       const estimatedDuration = estimateEpisodeDurationSeconds(narrationText);
       const initialBufferSize = Math.min(INITIAL_PLAYBACK_BUFFER, chunks.length);
-      const generatedDurations: number[] = [];
+	      const generatedDurations: number[] = [];
+	      activeGeneratedDurations = generatedDurations;
 
       setGenerationProgress({ current: 0, total: totalSteps });
-      setGenerationSession({
+	      setGenerationSession({
         startedAt: Date.now(),
-        estimatedSeconds: estimateGenerationSeconds(chunks.length, shouldGenerateNotes),
+        estimatedSeconds: estimateGenerationSeconds(chunks.length, false),
         totalSteps,
-        notesIncluded: shouldGenerateNotes,
-        notesCompleted: !shouldGenerateNotes
-      });
+        notesIncluded: false,
+        notesCompleted: true
+		      });
 
-      for (let index = 0; index < initialBufferSize; index++) {
-        const { wavBuffer, duration } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName);
+	      partialEpisodeDraft = {
+	        id,
+	        title,
+	        text: inputText,
+	        date: Date.now(),
+	        bookmarks: [],
+	        categories: [],
+	        voice: selectedVoice,
+	        audioBlobId: id,
+	        chunkCount: chunks.length,
+	        readyChunkCount: 0,
+		        generationStatus: 'processing',
+		        chunkDurations: [],
+		        duration: estimatedDuration,
+		        playbackRate: 1
+		      };
+
+	      for (let index = 0; index < initialBufferSize; index++) {
+	        const { wavBuffer, duration, usage } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName, {
+	          episodeId: id,
+	          chunkIndex: index,
+	        });
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
-        uploadEpisodeChunkToCloud(id, index, wavBuffer);
-        generatedDurations[index] = duration;
-        setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
-      }
+	        uploadEpisodeChunkToCloud(id, index, wavBuffer);
+	        generatedDurations[index] = duration;
+	        activeGeneratedCount = index + 1;
+	        activeGenerationCost = appendGenerationCost(activeGenerationCost, usage);
+	        setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
+	      }
 
       const newEpisode: PodcastEpisode = {
         id,
@@ -3197,73 +4236,72 @@ const App: React.FC = () => {
         bookmarks: [],
         categories: [],
         voice: selectedVoice,
-        audioBlobId: id,
-        chunkCount: chunks.length,
-        readyChunkCount: initialBufferSize,
-        generationStatus: chunks.length === initialBufferSize && !shouldGenerateNotes ? 'ready' : 'processing',
-        chunkDurations: [...generatedDurations],
-        duration: estimatedDuration,
-        notes: fallbackNotes,
-        playbackRate: 1
-      };
+	        audioBlobId: id,
+	        chunkCount: chunks.length,
+	        readyChunkCount: initialBufferSize,
+	        generationStatus: chunks.length === initialBufferSize ? 'ready' : 'processing',
+	        generationCost: activeGenerationCost,
+	        chunkDurations: [...generatedDurations],
+	        duration: estimatedDuration,
+	        playbackRate: 1
+	      };
 
-      updateLibrary(prev => [newEpisode, ...prev]);
-      createdEpisodeId = id;
-      await handlePlayEpisode(newEpisode, 0);
+	      updateLibrary(prev => [newEpisode, ...prev]);
+	      await handlePlayEpisode(newEpisode, 0);
 
       for (let index = initialBufferSize; index < chunks.length; index++) {
-        const { wavBuffer, duration } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName);
+        const { wavBuffer, duration, usage } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName, {
+          episodeId: id,
+          chunkIndex: index,
+        });
         await saveAudioBlob(`${id}_${index}`, wavBuffer);
         chunkCache.current.set(`${id}_${index}`, wavBuffer);
-        uploadEpisodeChunkToCloud(id, index, wavBuffer);
-        generatedDurations[index] = duration;
-        patchEpisode(id, {
+	        uploadEpisodeChunkToCloud(id, index, wavBuffer);
+	        generatedDurations[index] = duration;
+	        activeGeneratedCount = index + 1;
+	        activeGenerationCost = appendGenerationCost(activeGenerationCost, usage);
+	        patchEpisode(id, {
           readyChunkCount: index + 1,
-          chunkDurations: [...generatedDurations]
+          chunkDurations: [...generatedDurations],
+          generationCost: activeGenerationCost,
         });
         setGenerationProgress(prev => ({ ...prev, current: index + 1 }));
       }
 
-      patchEpisode(id, {
-        readyChunkCount: chunks.length,
-        generationStatus: shouldGenerateNotes ? 'processing' : 'ready',
-        chunkDurations: [...generatedDurations],
-        duration: sumDurations(generatedDurations)
-      });
+	      patchEpisode(id, {
+	        readyChunkCount: chunks.length,
+	        generationStatus: 'ready',
+	        chunkDurations: [...generatedDurations],
+	        generationCost: activeGenerationCost,
+	        duration: sumDurations(generatedDurations)
+	      });
 
-      if (shouldGenerateNotes) {
-        setIsGeneratingNotes(true);
-        try {
-          const generatedNotes = await generateNotes(notesSourceText, makeRetryOptions());
-          setRetryNotice(null);
-          patchEpisode(id, {
-            notes: polishEpisodeNotes(generatedNotes, inputText, inputNotes, userLang),
-            generationStatus: 'ready',
-            duration: sumDurations(generatedDurations)
-          });
-          setGenerationProgress({ current: totalSteps, total: totalSteps });
-        } catch (e) {
-          console.error('Could not generate notes', e);
-          patchEpisode(id, {
-            notes: fallbackNotes,
-            generationStatus: 'ready',
-            duration: sumDurations(generatedDurations)
-          });
-          setError('AI notes could not be generated, so a local summary was created instead.');
-        } finally {
-          setIsGeneratingNotes(false);
-          setGenerationSession(prev => prev ? { ...prev, notesCompleted: true } : prev);
-        }
-      } else {
-        setGenerationProgress({ current: totalSteps, total: totalSteps });
-      }
-    } catch (err) {
-      console.error(err);
-      if (createdEpisodeId) {
-        patchEpisode(createdEpisodeId, { generationStatus: 'failed' });
-      }
-      setError(err instanceof Error && err.message ? err.message : 'Could not start the podcast.');
-    }
+	      setGenerationProgress({ current: totalSteps, total: totalSteps });
+	    } catch (err) {
+	      console.error(err);
+	      if (createdEpisodeId) {
+	        if (isAiLimitError(err)) {
+	          const episodeExists = libraryRef.current.some((episode) => episode.id === createdEpisodeId);
+	          if (!episodeExists && partialEpisodeDraft && activeGeneratedCount > 0) {
+	            const readyDurations = activeGeneratedDurations.slice(0, activeGeneratedCount);
+	            updateLibrary(prev => [{
+	              ...partialEpisodeDraft,
+	              generationStatus: 'ready',
+	              readyChunkCount: activeGeneratedCount,
+	              chunkCount: activeGeneratedCount,
+	              chunkDurations: readyDurations,
+	              generationCost: activeGenerationCost,
+	              duration: sumDurations(readyDurations),
+	            }, ...prev]);
+	          } else {
+	            markEpisodePartiallyReady(createdEpisodeId, activeGeneratedCount, activeGeneratedDurations);
+	          }
+	        } else {
+	          patchEpisode(createdEpisodeId, { generationStatus: 'failed' });
+	        }
+	      }
+	      showParsedError(err, 'podcast generation');
+	    }
     finally {
       if (!liveGenerationRef.current) {
         setIsGenerating(false);
@@ -3306,10 +4344,101 @@ const App: React.FC = () => {
     finally { setIsDownloading(null); }
   };
 
+  const ensureEpisodeSummary = async (episode: PodcastEpisode) => {
+    const latestEpisode = getLatestEpisodeSnapshot(episode);
+    const existingNotes = normalizeEpisodeNotes(latestEpisode.notes, userLang);
+    if (existingNotes) {
+      return latestEpisode;
+    }
+
+    const activeRequest = summaryGenerationRequestsRef.current.get(latestEpisode.id);
+    if (activeRequest) {
+      return activeRequest;
+    }
+
+    const sourceText = buildNotesSourceText(latestEpisode.text);
+    if (!sourceText.trim()) {
+      setError(t('no_notes'));
+      return null;
+    }
+
+    const summaryCacheKey = await buildSummaryContentCacheKey(sourceText, userLang);
+    const cachedNotes = await getSummaryCache(summaryCacheKey).catch((error) => {
+      console.warn('Could not read summary cache', error);
+      return null;
+    });
+    if (cachedNotes) {
+      const polishedCachedNotes = polishEpisodeNotes(cachedNotes, latestEpisode.text, inputNotes, userLang);
+      const updatedEpisode = {
+        ...latestEpisode,
+        notes: polishedCachedNotes,
+      };
+      patchEpisode(latestEpisode.id, { notes: polishedCachedNotes });
+      return updatedEpisode;
+    }
+
+    const request = (async () => {
+      setSummaryGenerationEpisodeId(latestEpisode.id);
+      setIsGeneratingNotes(true);
+
+      try {
+        let generatedNotes: EpisodeNotes;
+        try {
+          generatedNotes = await generateNotes(sourceText, makeRetryOptions());
+        } catch (error) {
+          throw withAiRequestContext(error, {
+            functionName: 'summary_generation',
+            kind: 'SUMMARY',
+            provider: 'Gemini',
+            model: 'gemini-3-flash-preview',
+            textLength: sourceText.length,
+          });
+        }
+        setRetryNotice(null);
+        recordAiUsage('summary', sourceText, {
+          outputTextValue: [
+            generatedNotes.title,
+            generatedNotes.summary,
+            ...generatedNotes.sections.flatMap(section => [section.heading, ...section.bullets]),
+          ].join('\n'),
+          model: 'gemini-3-flash-preview',
+        });
+
+        const polishedNotes = polishEpisodeNotes(generatedNotes, latestEpisode.text, inputNotes, userLang);
+        const updatedEpisode = {
+          ...latestEpisode,
+          notes: polishedNotes,
+        };
+        patchEpisode(latestEpisode.id, { notes: polishedNotes });
+        await saveSummaryCache(summaryCacheKey, polishedNotes).catch((error) => {
+          console.warn('Could not write summary cache', error);
+        });
+        return updatedEpisode;
+      } catch (error) {
+        console.error('Could not generate summary on demand', error);
+        showParsedError(error, 'summary generation');
+        return null;
+      } finally {
+        summaryGenerationRequestsRef.current.delete(latestEpisode.id);
+        setIsGeneratingNotes(false);
+        setSummaryGenerationEpisodeId(current => current === latestEpisode.id ? null : current);
+      }
+    })();
+
+    summaryGenerationRequestsRef.current.set(latestEpisode.id, request);
+    return request;
+  };
+
+  const handleOpenSummary = async (episode: PodcastEpisode) => {
+    const episodeWithSummary = await ensureEpisodeSummary(episode);
+    if (episodeWithSummary) {
+      setShowNotesModal(episodeWithSummary);
+    }
+  };
+
   const handlePlaySummary = async (episode: PodcastEpisode) => {
     const summaryEl = summaryAudioRef.current;
-    const summaryText = buildEpisodeSummaryPlaybackText(episode, userLang);
-    if (!summaryEl || !summaryText) {
+    if (!summaryEl) {
       setError(t('summary_audio_error'));
       return;
     }
@@ -3323,6 +4452,17 @@ const App: React.FC = () => {
     await unlockAudioPlayback();
 
     try {
+      const episodeWithSummary = await ensureEpisodeSummary(episode);
+      if (!episodeWithSummary) {
+        return;
+      }
+
+      const summaryText = buildEpisodeSummaryPlaybackText(episodeWithSummary, userLang);
+      if (!summaryText) {
+        setError(t('summary_audio_error'));
+        return;
+      }
+
       pauseEpisodePlaybackForSummary();
 
       if (isCurrentSummary && summaryEl.src) {
@@ -3335,10 +4475,10 @@ const App: React.FC = () => {
       }
 
       const requestId = ++summaryRequestRef.current;
-      const blobId = getSummaryAudioBlobId(episode);
+      const blobId = getSummaryAudioBlobId(episodeWithSummary);
       setRetryNotice(null);
       setSummaryPlayback({
-        episodeId: episode.id,
+        episodeId: episodeWithSummary.id,
         isLoading: true,
         isPlaying: false
       });
@@ -3349,7 +4489,7 @@ const App: React.FC = () => {
       }
 
       if (!wavBuffer && authUser?.id) {
-        wavBuffer = await downloadCloudSummaryAudio(authUser.id, episode.audioBlobId) ?? undefined;
+        wavBuffer = await downloadCloudSummaryAudio(authUser.id, episodeWithSummary.audioBlobId) ?? undefined;
         if (wavBuffer) {
           await saveAudioBlob(blobId, wavBuffer);
         }
@@ -3357,20 +4497,49 @@ const App: React.FC = () => {
 
       if (!wavBuffer) {
         const speechRequest = buildSpeechRequestText(summaryText, useSpeechCleanup);
-        const base64 = await generateTTS(
+        const summaryContentCacheKey = await buildTtsContentCacheKey(
           speechRequest.speechText,
-          episode.voice as VoiceName,
-          undefined,
-          {
-            ...makeRetryOptions(),
-            languageHint: speechRequest.languageHint,
-          }
+          episodeWithSummary.voice as VoiceName,
+          speechRequest.languageHint
         );
-        setRetryNotice(null);
-        const pcmBytes = decodeBase64ToUint8(base64);
-        wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
+        wavBuffer = await getAudioBlob(summaryContentCacheKey) ?? undefined;
+        if (!wavBuffer) {
+	          let ttsResult: Awaited<ReturnType<typeof generateTTS>>;
+	          try {
+	            ttsResult = await generateTTS(
+	              speechRequest.speechText,
+	              episodeWithSummary.voice as VoiceName,
+	              undefined,
+	              {
+	                ...makeRetryOptions(),
+	                languageHint: speechRequest.languageHint,
+	                usageContext: {
+	                  episodeId: episodeWithSummary.id,
+	                  chunkIndex: 0,
+	                  usageCategory: 'summary_audio',
+	                },
+	              }
+	            );
+          } catch (error) {
+            throw withAiRequestContext(error, {
+              functionName: 'summary_tts',
+              kind: 'SUMMARY_TTS',
+              provider: 'Gemini',
+              model: 'gemini-2.5-flash-preview-tts',
+              textLength: speechRequest.speechText.length,
+            });
+		        }
+		        setRetryNotice(null);
+		        const pcmBytes = decodeBase64ToUint8(ttsResult.audio);
+	        wavBuffer = pcmToWav(pcmBytes, AUDIO_SAMPLE_RATE);
+	        recordAiUsage('tts', speechRequest.speechText, {
+	          audioSeconds: calculateChunkDurationSeconds(pcmBytes, AUDIO_SAMPLE_RATE),
+	          model: 'gemini-2.5-flash-preview-tts',
+          });
+          await saveAudioBlob(summaryContentCacheKey, wavBuffer);
+        }
         await saveAudioBlob(blobId, wavBuffer);
-        uploadSummaryToCloud(episode.audioBlobId, wavBuffer);
+        uploadSummaryToCloud(episodeWithSummary.audioBlobId, wavBuffer);
       }
 
       if (requestId !== summaryRequestRef.current) {
@@ -3397,9 +4566,11 @@ const App: React.FC = () => {
 
   const waitForChunkData = async (episode: PodcastEpisode, index: number, requestId: number) => {
     const startedAt = Date.now();
+    let activeTimeoutMs = getChunkLoadTimeoutMs(getLatestEpisodeSnapshot(episode), index);
 
     while (requestId === playRequestRef.current) {
       const latestEpisode = getLatestEpisodeSnapshot(episode);
+      activeTimeoutMs = Math.max(activeTimeoutMs, getChunkLoadTimeoutMs(latestEpisode, index));
       if (latestEpisode.generationStatus === 'failed') {
         throw new ChunkLoadError(t('playback_chunk_missing'), true);
       }
@@ -3409,8 +4580,17 @@ const App: React.FC = () => {
         return data;
       }
 
-      if (Date.now() - startedAt >= CHUNK_LOAD_TIMEOUT_MS) {
+      if (Date.now() - startedAt >= activeTimeoutMs) {
         const isStillGenerating = latestEpisode.generationStatus === 'processing' && !isEpisodeChunkReady(latestEpisode, index);
+        logPlayback('chunk timeout', {
+          episodeId: latestEpisode.id,
+          index,
+          elapsedMs: Date.now() - startedAt,
+          timeoutMs: activeTimeoutMs,
+          isStillGenerating,
+          readyChunkCount: latestEpisode.readyChunkCount,
+          chunkCount: latestEpisode.chunkCount,
+        });
         throw new ChunkLoadError(
           isStillGenerating ? t('playback_chunk_waiting') : t('playback_chunk_missing'),
           !isStillGenerating
@@ -3420,6 +4600,7 @@ const App: React.FC = () => {
       await sleep(CHUNK_POLL_INTERVAL_MS);
     }
 
+    logPlayback('chunk request cancelled', { episodeId: episode.id, index, requestId });
     return null;
   };
 
@@ -3434,11 +4615,26 @@ const App: React.FC = () => {
     const episodeRate = episode.playbackRate || 1;
 
     try {
+      logPlayback('playChunk requested', {
+        episodeId: episode.id,
+        index,
+        requestId,
+        autoplay,
+        startTime,
+      });
+      isLoadingChunkRef.current = true;
       setIsLoadingChunk(true);
       const data = await waitForChunkData(episode, index, requestId);
       if (!data || requestId !== playRequestRef.current) {
         return;
       }
+
+      beginChunkSwitch('switching chunk', {
+        episodeId: episode.id,
+        index,
+        requestId,
+        startTime,
+      });
 
       for (let attempt = 1; attempt <= MAX_CHUNK_PLAY_ATTEMPTS; attempt++) {
         loadAudioFromBuffer(data);
@@ -3451,8 +4647,22 @@ const App: React.FC = () => {
           } else {
             pauseAudio();
           }
+          endChunkSwitch('play started', {
+            episodeId: episode.id,
+            index,
+            requestId,
+            attempt,
+            autoplay,
+          });
           break;
         } catch (playError) {
+          logPlayback('play retry', {
+            episodeId: episode.id,
+            index,
+            requestId,
+            attempt,
+            error: playError instanceof Error ? playError.message : String(playError),
+          });
           if (!autoplay || attempt >= MAX_CHUNK_PLAY_ATTEMPTS || requestId !== playRequestRef.current) {
             throw playError;
           }
@@ -3495,6 +4705,12 @@ const App: React.FC = () => {
       }
     } catch (e) { 
       console.error('Chunk playback failed', e);
+      endChunkSwitch('chunk switch failed', {
+        episodeId: episode.id,
+        index,
+        requestId,
+        error: e instanceof Error ? e.message : String(e),
+      });
       if (e instanceof ChunkLoadError) {
         pauseForUnavailableChunk(
           getLatestEpisodeSnapshot(episode),
@@ -3510,6 +4726,7 @@ const App: React.FC = () => {
       }
     } finally {
       if (requestId === playRequestRef.current) {
+        isLoadingChunkRef.current = false;
         setIsLoadingChunk(false);
       }
     }
@@ -3899,7 +5116,8 @@ const App: React.FC = () => {
   const processImages = async (
     rawFiles: File[],
     clearSource: () => void,
-    source: 'camera' | 'images'
+    source: 'camera' | 'images',
+    replaceExistingText: boolean = false
   ) => {
     if (rawFiles.length === 0) {
       clearSource();
@@ -3907,7 +5125,7 @@ const App: React.FC = () => {
     }
 
     const files = sortFilesForReading(rawFiles);
-    const importSession = startImportSession(source);
+    const importSession = startImportSession(source, replaceExistingText);
     setScanSource(source);
     setRetryNotice(null);
     setError(null);
@@ -3942,15 +5160,29 @@ const App: React.FC = () => {
             if (hasInsertedSeparator) {
               appendImportSessionText(importSession.id, '\n\n');
             }
-            await streamIntoImportSession(importSession.id, async (onChunk) => {
-              await streamTextFromImage(base64, optimizedFile.type || IMAGE_IMPORT_COMPRESSED_MIME, (textChunk) => {
-                extractedText += textChunk;
-                onChunk(textChunk);
-              });
-            });
-            await writeImportTextCache(file, extractedText);
-            hasInsertedSeparator = true;
-          }
+		            await streamIntoImportSession(importSession.id, async (onChunk) => {
+		              try {
+		                await streamTextFromImage(base64, optimizedFile.type || IMAGE_IMPORT_COMPRESSED_MIME, (textChunk) => {
+		                  extractedText += textChunk;
+		                  onChunk(textChunk);
+		                });
+		              } catch (error) {
+		                throw withAiRequestContext(error, {
+		                  functionName: source === 'camera' ? 'camera_ocr' : 'image_ocr',
+		                  kind: 'OCR',
+		                  provider: 'Gemini',
+		                  model: 'gemini-3-flash-preview',
+		                  textLength: file.size,
+		                });
+		              }
+		            });
+	            recordAiUsage('ocr', file.name, {
+	              outputTextValue: extractedText,
+	              model: 'gemini-3-flash-preview',
+	            });
+	            await writeImportTextCache(file, extractedText);
+	            hasInsertedSeparator = true;
+	          }
           successfulCount += 1;
           setRetryNotice(null);
         } catch (error) {
@@ -3976,6 +5208,7 @@ const App: React.FC = () => {
   const processDocuments = async (
     rawFiles: File[],
     clearSource: () => void,
+    replaceExistingText: boolean = false
   ) => {
     if (rawFiles.length === 0) {
       clearSource();
@@ -3983,7 +5216,7 @@ const App: React.FC = () => {
     }
 
     const files = sortFilesForReading(rawFiles);
-    const importSession = startImportSession('document');
+    const importSession = startImportSession('document', replaceExistingText);
     setScanSource('document');
     setRetryNotice(null);
     setError(null);
@@ -4030,15 +5263,29 @@ const App: React.FC = () => {
             if (hasInsertedSeparator) {
               appendImportSessionText(importSession.id, '\n\n');
             }
-            await streamIntoImportSession(importSession.id, async (onChunk) => {
-              await streamTextFromPdf(base64, (textChunk) => {
-                extractedText += textChunk;
-                onChunk(textChunk);
-              });
-            });
-            await writeImportTextCache(file, extractedText);
-            hasInsertedSeparator = true;
-          }
+		            await streamIntoImportSession(importSession.id, async (onChunk) => {
+		              try {
+		                await streamTextFromPdf(base64, (textChunk) => {
+		                  extractedText += textChunk;
+		                  onChunk(textChunk);
+		                });
+		              } catch (error) {
+		                throw withAiRequestContext(error, {
+		                  functionName: 'pdf_ocr',
+		                  kind: 'OCR',
+		                  provider: 'Gemini',
+		                  model: 'gemini-2.5-flash',
+		                  textLength: file.size,
+		                });
+		              }
+		            });
+	            recordAiUsage('ocr', file.name, {
+	              outputTextValue: extractedText,
+	              model: 'gemini-2.5-flash',
+	            });
+	            await writeImportTextCache(file, extractedText);
+	            hasInsertedSeparator = true;
+	          }
           successfulCount += 1;
           setRetryNotice(null);
         } catch (error) {
@@ -4065,9 +5312,10 @@ const App: React.FC = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
+    const replaceExistingText = shouldReplaceExistingImportText();
     await processImages(Array.from(fileList) as File[], () => {
       e.target.value = '';
-    }, 'images');
+    }, 'images', replaceExistingText);
   };
 
   const appendFilesToCameraShots = (rawFiles: File[]) => {
@@ -4097,9 +5345,10 @@ const App: React.FC = () => {
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
+    const replaceExistingText = shouldReplaceExistingImportText();
     await processDocuments(Array.from(fileList) as File[], () => {
       e.target.value = '';
-    });
+    }, replaceExistingText);
   };
 
   const handleLinkImport = async () => {
@@ -4134,10 +5383,29 @@ const App: React.FC = () => {
     const importSession = startImportSession('link');
 
     try {
-      const cachedText = await readUrlImportCache(normalizedUrl);
-      const extractedText = cachedText?.trim()
-        ? cachedText
-        : await extractWebPageText(normalizedUrl, makeRetryOptions());
+	      const cachedText = await readUrlImportCache(normalizedUrl);
+		      const wasCached = Boolean(cachedText?.trim());
+		      let extractedText = cachedText;
+		      if (!wasCached) {
+		        try {
+		          extractedText = await extractWebPageText(normalizedUrl, makeRetryOptions());
+		        } catch (error) {
+		          throw withAiRequestContext(error, {
+		            functionName: 'link_import',
+		            kind: /\.pdf(?:$|[?#])/i.test(normalizedUrl) ? 'OCR' : 'WEB',
+		            provider: 'Gemini',
+		            model: /\.pdf(?:$|[?#])/i.test(normalizedUrl) ? 'gemini-2.5-flash' : 'local-html-extract',
+		            textLength: normalizedUrl.length,
+		          });
+		        }
+		      }
+
+	      if (!wasCached && /\.pdf(?:$|[?#])/i.test(normalizedUrl)) {
+	        recordAiUsage('web', normalizedUrl, {
+	          outputTextValue: extractedText,
+	          model: 'gemini-2.5-flash',
+	        });
+	      }
 
       replaceImportSessionText(importSession.id, extractedText);
       completeImportSession(importSession.id);
@@ -4242,11 +5510,12 @@ const App: React.FC = () => {
     }
 
     const shotsToImport = [...cameraShots];
+    const replaceExistingText = shouldReplaceExistingImportText();
     setIsCameraImporting(true);
     hideCameraCapture();
 
     try {
-      await processImages(shotsToImport.map((shot) => shot.file), () => {}, 'camera');
+      await processImages(shotsToImport.map((shot) => shot.file), () => {}, 'camera', replaceExistingText);
     } finally {
       revokeCameraShotPreviews(shotsToImport);
       setCameraShots([]);
@@ -4254,21 +5523,48 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTranslate = async (lang: string) => {
-    if (!inputText.trim() || isBusy) return;
-    setIsTranslating(true);
+	  const handleTranslate = async (lang: string) => {
+	    if (!inputText.trim() || isBusy) return;
+	    setIsTranslating(true);
     setShowLangMenu(false);
     setRetryNotice(null);
     setTranslateSession({
       startedAt: Date.now(),
       estimatedSeconds: estimateTranslationSeconds(inputText.length),
       targetLanguage: lang
-    });
-    try {
-      const translated = await translateText(inputText, lang, makeRetryOptions());
-      setRetryNotice(null);
-      setInputText(translated);
-    } catch (err) {
+	    });
+		    try {
+		      const translationCacheKey = await buildTranslationCacheKey(inputText, lang);
+		      const cachedTranslation = await getImportTextCache(translationCacheKey).catch((error) => {
+		        console.warn('Could not read translation cache', error);
+		        return null;
+		      });
+		      let translated = cachedTranslation?.trim() ? cachedTranslation : '';
+		      if (!translated) {
+		        try {
+		          translated = await translateText(inputText, lang, makeRetryOptions());
+		        } catch (error) {
+		          throw withAiRequestContext(error, {
+		            functionName: 'translate_text',
+		            kind: 'TRANSLATE',
+		            provider: 'Gemini',
+		            model: 'gemini-3-flash-preview',
+		            textLength: inputText.length,
+		          });
+		        }
+		      }
+		      setRetryNotice(null);
+		      if (!cachedTranslation?.trim()) {
+		        recordAiUsage('translate', inputText, {
+		          outputTextValue: translated,
+		          model: 'gemini-3-flash-preview',
+		        });
+		        await saveImportTextCache(translationCacheKey, translated).catch((error) => {
+		          console.warn('Could not write translation cache', error);
+		        });
+		      }
+		      setInputText(translated);
+		    } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'Translation failed.');
     }
     finally {
@@ -4276,6 +5572,11 @@ const App: React.FC = () => {
       setTranslateSession(null);
       setRetryNotice(null);
     }
+  };
+
+  const redirectAfterAuth = () => {
+    const redirect = getRedirectParam() ?? intendedRouteRef.current ?? DEFAULT_AUTHENTICATED_PATH;
+    replaceWithRoute(redirect);
   };
 
   const handleSubmitAuth = async () => {
@@ -4305,6 +5606,7 @@ const App: React.FC = () => {
           message: t('auth_success_signed_in'),
         });
         setShowAuthPanel(false);
+        redirectAfterAuth();
         return;
       }
 
@@ -4329,10 +5631,44 @@ const App: React.FC = () => {
       });
       if (data.session) {
         setShowAuthPanel(false);
+        redirectAfterAuth();
       }
     } catch (error) {
       console.error('Supabase auth misslyckades', error);
       const message = error instanceof Error ? error.message : 'Auth failed.';
+      setAuthFeedback({
+        kind: 'error',
+        message: normalizeAuthErrorMessage(message, userLang),
+      });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    if (!supabase || !authEmail.trim()) {
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthFeedback(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}${LOGIN_PATH}` : undefined,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAuthFeedback({
+        kind: 'success',
+        message: t('auth_reset_sent'),
+      });
+    } catch (error) {
+      console.error('Supabase reset password misslyckades', error);
+      const message = error instanceof Error ? error.message : 'Password reset failed.';
       setAuthFeedback({
         kind: 'error',
         message: normalizeAuthErrorMessage(message, userLang),
@@ -4358,11 +5694,16 @@ const App: React.FC = () => {
 
       setAuthSession(null);
       setAuthUser(null);
+      libraryRef.current = [];
+      setLibrary([]);
+      hasHydratedLibraryRef.current = false;
+      handleClosePlayer();
       setAuthPassword('');
       setAuthFeedback({
         kind: 'success',
         message: t('auth_success_signed_out'),
       });
+      replaceWithRoute(LOGIN_PATH);
     } catch (error) {
       console.error('Supabase signout misslyckades', error);
       const message = error instanceof Error ? error.message : 'Sign out failed.';
@@ -4416,29 +5757,58 @@ const App: React.FC = () => {
     return null;
   })();
   const resolvedModalNotes = normalizeEpisodeNotes(showNotesModal?.notes, userLang);
+  const isModalSummaryGenerating = showNotesModal
+    ? summaryGenerationEpisodeId === showNotesModal.id
+    : false;
   const isModalSummaryLoading = showNotesModal
-    ? summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isLoading
+    ? (summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isLoading) || isModalSummaryGenerating
     : false;
   const isModalSummaryPlaying = showNotesModal
     ? summaryPlayback.episodeId === showNotesModal.id && summaryPlayback.isPlaying
     : false;
   const activeEpisodeBookmarks = player.activeEpisode?.bookmarks ?? [];
-  const activeEpisodeRuntime = player.activeEpisode
-    ? formatTime(getEpisodeDuration(player.activeEpisode))
-    : formatTime(player.duration);
-  const activePrimaryButtonProgressPercent = activePrimaryButton
+  const isActiveEpisodeNotesGenerating = player.activeEpisode
+    ? summaryGenerationEpisodeId === player.activeEpisode.id
+    : false;
+  const isActiveEpisodeSummaryLoading = player.activeEpisode
+    ? (summaryPlayback.episodeId === player.activeEpisode.id && summaryPlayback.isLoading) || isActiveEpisodeNotesGenerating
+    : false;
+  const isActiveEpisodeSummaryPlaying = player.activeEpisode
+    ? summaryPlayback.episodeId === player.activeEpisode.id && summaryPlayback.isPlaying
+    : false;
+	  const activeEpisodeRuntime = player.activeEpisode
+	    ? formatTime(getEpisodeDuration(player.activeEpisode))
+	    : formatTime(player.duration);
+	  const isAiLimitAppError = appError?.code === 'TOKEN_LIMIT' ||
+	    (appError?.code === 'RATE_LIMIT' && /ai|tts|limit/i.test(`${appError.title} ${appError.message}`));
+	  const activePrimaryButtonProgressPercent = activePrimaryButton
     ? Math.max(8, Math.min(100, Math.round(activePrimaryButton.progress * 100)))
     : 0;
-  const activeImportSession = importSessionRef.current;
-  const canGenerateFromImportSession = (() => {
-    if (!isScanning || !activeImportSession) return false;
-    const sourceText = composeImportedText(activeImportSession.baseText, activeImportSession.text).trim();
-    if (!sourceText) return false;
-    const { allChunks, finalizedCount } = getImportChunkWindow(sourceText, activeImportSession.isComplete);
-    return finalizedCount >= getRequiredLiveReadyChunks(allChunks, finalizedCount, activeImportSession.isComplete);
-  })();
-  const isInputLocked = isBusy || isScanning;
-  const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession);
+	  const activeImportSession = importSessionRef.current;
+	  const usageSummary = buildAiUsageSummary(aiUsage);
+	  const hasReachedEstimatedAiLimit = usageSummary.remainingPercent <= 0;
+	  const canGenerateFromImportSession = (() => {
+	    if (!isScanning || !activeImportSession) return false;
+	    const sourceText = composeImportedText(activeImportSession.baseText, activeImportSession.text).trim();
+	    if (!sourceText) return false;
+	    const { allChunks, finalizedCount } = getImportChunkWindow(sourceText, activeImportSession.isComplete);
+	    return finalizedCount >= getRequiredLiveReadyChunks(allChunks, finalizedCount, activeImportSession.isComplete);
+	  })();
+	  const isInputLocked = isBusy || isScanning;
+	  const isGenerateDisabled = isBusy || !inputText.trim() || (isScanning && !canGenerateFromImportSession) || hasReachedEstimatedAiLimit;
+	  const hasPodcastText = inputText.trim().length > 0;
+	  const usageBarClass = usageSummary.status === 'green'
+	    ? 'bg-emerald-400'
+	    : usageSummary.status === 'orange'
+	      ? 'bg-amber-400'
+	      : usageSummary.status === 'red'
+	        ? 'bg-red-400'
+	        : 'bg-zinc-400';
+	  const usageToneClass = usageSummary.status === 'green'
+	    ? 'border-emerald-200/70 bg-emerald-50/94 text-emerald-800'
+	    : usageSummary.status === 'orange'
+	      ? 'border-amber-200/80 bg-amber-50/95 text-amber-800'
+	      : 'border-red-200/80 bg-red-50/95 text-red-800';
   const notesLabels = getNotesLabels(userLang);
   const authStatusEmail = authUser?.email || authSession?.user?.email || authEmail.trim();
   const isAuthSubmitDisabled = isAuthLoading || !authEmail.trim() || !authPassword.trim();
@@ -4469,7 +5839,7 @@ const App: React.FC = () => {
     ? t('speech_cleanup_label_on')
     : t('speech_cleanup_label_off');
   const cameraCountStatus = formatTemplate(t('camera_count_status'), { count: cameraShots.length });
-  const selectedVoiceLabel = PREMIUM_VOICES.find((voice) => voice.name === selectedVoice)?.label ?? selectedVoice;
+  const selectedVoiceLabel = getVoiceDisplayName(selectedVoice);
   const librarySortLabel = librarySortMode === 'oldest'
     ? t('sort_oldest')
     : librarySortMode === 'title'
@@ -4486,24 +5856,29 @@ const App: React.FC = () => {
   const libraryItemIdleClass = 'bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(232,226,246,0.96))] border-[#d8d0ed] text-zinc-900 shadow-[0_26px_64px_-46px_rgba(32,15,93,0.28)] backdrop-blur';
   const libraryItemActiveClass = 'bg-gradient-to-br from-[#391BA6] via-[#30168C] to-[#7763BE] text-white border-transparent shadow-[0_24px_60px_-36px_rgba(57,27,166,0.34)]';
 
-  const openEpisodeEditor = (episode: PodcastEpisode) => {
-    setEditingEpisodeId(episode.id);
-    setEpisodeTitleDraft(episode.title);
-    setCategoryDraft(getEpisodeCategories(episode).join(', '));
-  };
+	  const openEpisodeEditor = (episode: PodcastEpisode) => {
+	    setEditingEpisodeId(episode.id);
+	    setEpisodeTitleDraft(episode.title);
+	    setCategoryDraft(getEpisodeCategories(episode).join(', '));
+	    setEpisodeTextDraft(episode.text);
+	    setEpisodeEditorTab('details');
+	  };
 
-  const closeEpisodeEditor = () => {
-    setEditingEpisodeId(null);
-    setEpisodeTitleDraft('');
-    setCategoryDraft('');
-  };
+	  const closeEpisodeEditor = () => {
+	    setEditingEpisodeId(null);
+	    setEpisodeTitleDraft('');
+	    setCategoryDraft('');
+	    setEpisodeTextDraft('');
+	    setEpisodeEditorTab('details');
+	  };
 
   const saveEpisodeEdits = () => {
     if (!editingEpisode) return;
-    patchEpisode(editingEpisode.id, {
-      title: truncateText(episodeTitleDraft, 70) || editingEpisode.title,
-      categories: parseCategoryInput(categoryDraft),
-    });
+	    patchEpisode(editingEpisode.id, {
+	      title: truncateText(episodeTitleDraft, 70) || editingEpisode.title,
+	      categories: parseCategoryInput(categoryDraft),
+	      text: episodeTextDraft,
+	    });
     closeEpisodeEditor();
   };
 
@@ -4521,6 +5896,177 @@ const App: React.FC = () => {
     setIsEditingSummary(false);
   };
 
+  const isForgotPasswordRoute = currentRoutePath === FORGOT_PASSWORD_PATH;
+  const isAuthGateSubmitDisabled = isAuthLoading || !authEmail.trim() || (!isForgotPasswordRoute && !authPassword.trim());
+
+  if (!isAuthReady) {
+    return (
+      <div lang={userLang} className={activeLayoutPreset.shellClassName}>
+        <main className="flex min-h-[100dvh] items-center justify-center px-6">
+          <div className="rounded-[2rem] border border-[#d8d0ed]/90 bg-white/95 px-6 py-5 text-center shadow-[0_24px_64px_-42px_rgba(32,15,93,0.42)]">
+            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6]" />
+            <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-[#4d3d93]">{t('auth_loading')}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div
+        lang={userLang}
+        className={activeLayoutPreset.shellClassName}
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+      >
+        <header className={activeLayoutPreset.headerClassName}>
+          <div className={classNames(activeLayoutPreset.headerInnerClassName, 'justify-between')}>
+            <h1 className={classNames('text-[0.88rem] font-black tracking-[0.01em] text-slate-100/88 md:text-[0.92rem]', activeLayoutPreset.brandClassName)}>VoxPod</h1>
+            <button
+              onClick={() => setUserLang(languageToggleTarget)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/16 bg-white/10 text-sm shadow-[0_10px_24px_-18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/16"
+              aria-label={languageToggleLabel}
+              title={languageToggleLabel}
+            >
+              <span aria-hidden="true">{languageToggleFlag}</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-[430px] items-center px-4 py-8 md:max-w-[520px]">
+          <section className={classNames('w-full space-y-4 overflow-hidden p-0', activeLayoutPreset.panelClassName)}>
+            <div className="relative h-44 overflow-hidden sm:h-52">
+              <img
+                src={heroPreviewImage}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-[center_24%]"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(242,242,242,0.02),rgba(57,27,166,0.12)_28%,rgba(32,15,93,0.72)_100%)]" />
+              <div className="absolute bottom-4 left-5 right-5">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/72">VoxPod</p>
+                <h2 className="mt-1 max-w-[16ch] text-2xl font-black leading-tight tracking-tight text-white">
+                  {isForgotPasswordRoute ? t('auth_forgot_tab') : authMode === 'signUp' ? t('auth_sign_up_tab') : t('auth_sign_in_tab')}
+                </h2>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-5 sm:p-6">
+            <div className="text-left">
+              <p className={subtleLabelClass}>VoxPod</p>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-600">Turn pages into podcasts — and keep your entire library synced wherever life takes you.</p>
+            </div>
+
+            {!isForgotPasswordRoute && (
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#ede8f8]/92 p-1">
+                <button
+                  onClick={() => {
+                    setAuthMode('signIn');
+                    navigateToAuthRoute(LOGIN_PATH);
+                  }}
+                  title={t('auth_sign_in_tab')}
+                  aria-label={t('auth_sign_in_tab')}
+                  className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                    authMode === 'signIn' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                  }`}
+                >
+                  {t('auth_sign_in_tab')}
+                </button>
+                <button
+                  onClick={() => {
+                    setAuthMode('signUp');
+                    navigateToAuthRoute(SIGNUP_PATH);
+                  }}
+                  title={t('auth_sign_up_tab')}
+                  aria-label={t('auth_sign_up_tab')}
+                  className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                    authMode === 'signUp' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                  }`}
+                >
+                  {t('auth_sign_up_tab')}
+                </button>
+              </div>
+            )}
+
+            {authFeedback && (
+              <div
+                role="status"
+                aria-live="polite"
+                className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
+                  authFeedback.kind === 'error'
+                    ? 'border-red-200 bg-red-50 text-red-700'
+                    : authFeedback.kind === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]'
+                }`}
+              >
+                {authFeedback.message}
+              </div>
+            )}
+
+            <div className="grid gap-3">
+              <div className="space-y-1">
+                <label htmlFor="auth-gate-email" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_email_label')}</label>
+                <input
+                  id="auth-gate-email"
+                  name="auth-gate-email"
+                  type="email"
+                  autoComplete="email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className={darkFieldClass}
+                />
+              </div>
+
+              {!isForgotPasswordRoute && (
+                <div className="space-y-1">
+                  <label htmlFor="auth-gate-password" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_password_label')}</label>
+                  <input
+                    id="auth-gate-password"
+                    name="auth-gate-password"
+                    type="password"
+                    autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className={darkFieldClass}
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => { void (isForgotPasswordRoute ? handleSendPasswordReset() : handleSubmitAuth()); }}
+              disabled={isAuthGateSubmitDisabled}
+              title={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
+              aria-label={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
+              className={classNames('w-full min-h-[64px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none active:scale-95 transition-all', accentButtonClass)}
+            >
+              {isAuthLoading
+                ? t('auth_loading')
+                : isForgotPasswordRoute
+                ? t('auth_reset_btn')
+                : authMode === 'signIn'
+                ? t('auth_sign_in_btn')
+                : t('auth_sign_up_btn')}
+            </button>
+
+            <div className="flex flex-wrap justify-center gap-3 text-[11px] font-black text-[#4d3d93]">
+              {isForgotPasswordRoute ? (
+                <button onClick={() => navigateToAuthRoute(LOGIN_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
+                  {t('auth_sign_in_tab')}
+                </button>
+              ) : (
+                <button onClick={() => navigateToAuthRoute(FORGOT_PASSWORD_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
+                  {t('auth_forgot_tab')}
+                </button>
+              )}
+            </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div
       lang={userLang}
@@ -4533,10 +6079,118 @@ const App: React.FC = () => {
             <h1 className={classNames('text-[0.88rem] font-black tracking-[0.01em] text-slate-100/88 md:text-[0.92rem]', activeLayoutPreset.brandClassName)}>VoxPod</h1>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setUserLang(languageToggleTarget)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/16 bg-white/10 text-sm shadow-[0_10px_24px_-18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/16"
+	          <div className="flex items-center gap-2">
+	            <div className="relative" ref={usagePanelRef}>
+	              <button
+	                type="button"
+	                onMouseDown={(event) => event.stopPropagation()}
+	                onClick={() => {
+	                  setShowUsagePanel((current) => !current);
+	                  setShowLangMenu(false);
+	                  setShowVoiceMenu(false);
+	                  setShowSortMenu(false);
+	                }}
+	                className={classNames(
+	                  'inline-flex h-8 items-center gap-2 rounded-full border px-2.5 text-[10px] font-black shadow-[0_10px_24px_-18px_rgba(0,0,0,0.28)] transition-colors',
+	                  usageSummary.status === 'green'
+	                    ? 'border-emerald-200/28 bg-emerald-300/12 text-emerald-100 hover:bg-emerald-300/18'
+	                    : usageSummary.status === 'orange'
+	                      ? 'border-amber-200/30 bg-amber-300/14 text-amber-100 hover:bg-amber-300/20'
+	                      : 'border-red-200/30 bg-red-300/14 text-red-100 hover:bg-red-300/20'
+	                )}
+	                aria-label="AI Remaining"
+	                title="AI Remaining"
+	              >
+	                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.9]" aria-hidden="true">
+	                  <path d="M9 3a3 3 0 0 0-3 3v1.2A3.5 3.5 0 0 0 4 10.4v.2a3.5 3.5 0 0 0 2 3.2V15a3 3 0 0 0 3 3" />
+	                  <path d="M15 3a3 3 0 0 1 3 3v1.2a3.5 3.5 0 0 1 2 3.2v.2a3.5 3.5 0 0 1-2 3.2V15a3 3 0 0 1-3 3" />
+	                  <path d="M9 3v18" />
+	                  <path d="M15 3v18" />
+	                  <path d="M9 9H7" />
+	                  <path d="M15 9h2" />
+	                  <path d="M9 15H7" />
+	                  <path d="M15 15h2" />
+	                </svg>
+	                <span className="hidden sm:inline">AI Remaining</span>
+	                <span>{usageSummary.remainingPercent}%</span>
+	              </button>
+
+	              {showUsagePanel && (
+	                <div className="animate-in fade-in slide-in-from-top-2 absolute right-0 top-full z-50 mt-2 w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-[1.65rem] border border-[#d8d0ed]/90 bg-[linear-gradient(180deg,rgba(242,242,242,0.98),rgba(229,223,245,0.97))] p-4 text-zinc-900 shadow-[0_28px_72px_-34px_rgba(20,10,55,0.44)] backdrop-blur-xl duration-200">
+	                  <div className="flex items-start justify-between gap-3">
+	                    <div>
+	                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#5f5497]">AI Usage</p>
+	                      <p className="mt-1 text-2xl font-black tracking-tight text-zinc-950">{usageSummary.remainingPercent}% remaining</p>
+	                    </div>
+	                    <span className={classNames('rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em]', usageToneClass)}>
+	                      Estimated
+	                    </span>
+	                  </div>
+
+	                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/80 shadow-inner">
+	                    <div
+	                      className={classNames('h-full rounded-full transition-all duration-500', usageBarClass)}
+	                      style={{ width: `${usageSummary.remainingPercent}%` }}
+	                    />
+	                  </div>
+
+	                  <div className="mt-4 grid grid-cols-2 gap-2">
+	                    <div className="rounded-2xl border border-white/70 bg-white/72 p-3">
+	                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Podcasts left</p>
+	                      <p className="mt-1 text-lg font-black text-zinc-950">≈ {usageSummary.estimatedPodcastsLeft}</p>
+	                    </div>
+	                    <div className="rounded-2xl border border-white/70 bg-white/72 p-3">
+	                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">This month</p>
+	                      <p className="mt-1 text-lg font-black text-zinc-950">{formatTokenDisplay(usageSummary.totalTokens)}</p>
+	                    </div>
+	                  </div>
+
+	                  <p className="mt-3 rounded-2xl border border-white/70 bg-white/65 px-3 py-2 text-xs font-bold leading-relaxed text-zinc-700">
+	                    {usageSummary.message}
+	                  </p>
+
+	                  {usageSummary.remainingPercent <= 10 && (
+	                    <div className={classNames('mt-3 rounded-2xl border px-3 py-2 text-xs font-black', usageToneClass)}>
+	                      {usageSummary.remainingPercent <= 5 ? 'Optimize usage before starting a long podcast.' : 'AI usage is below 10%.'}
+	                    </div>
+	                  )}
+
+	                  {usageSummary.remainingPercent <= 5 && usageSummary.remainingPercent > 0 && (
+	                    <button
+	                      type="button"
+	                      onClick={() => setUseSpeechCleanup(true)}
+	                      className="mt-3 w-full rounded-2xl bg-[#391BA6] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_-26px_rgba(57,27,166,0.42)]"
+	                    >
+	                      Optimize usage
+	                    </button>
+	                  )}
+
+	                  <button
+	                    type="button"
+	                    onClick={() => setShowUsageDetails((current) => !current)}
+	                    className="mt-3 flex w-full items-center justify-between rounded-2xl border border-[#d8d0ed] bg-white/80 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#391BA6]"
+	                  >
+	                    <span>Details</span>
+	                    <span aria-hidden="true">{showUsageDetails ? '−' : '+'}</span>
+	                  </button>
+
+	                  {showUsageDetails && (
+	                    <div className="mt-3 grid gap-2 rounded-2xl border border-white/70 bg-white/62 p-3 text-xs font-bold text-zinc-700">
+	                      <div className="flex justify-between gap-3"><span>Tokens used</span><span>{formatTokenDisplay(usageSummary.totalTokens)} / {formatTokenDisplay(aiUsage.monthlyBudgetTokens)}</span></div>
+	                      <div className="flex justify-between gap-3"><span>Tokens remaining</span><span>{formatTokenDisplay(usageSummary.remainingTokens)}</span></div>
+	                      <div className="flex justify-between gap-3"><span>Summaries left</span><span>≈ {usageSummary.estimatedSummariesLeft}</span></div>
+	                      <div className="flex justify-between gap-3"><span>Audio minutes left</span><span>≈ {usageSummary.estimatedAudioMinutesLeft}</span></div>
+	                      <div className="flex justify-between gap-3"><span>Current model</span><span className="max-w-[150px] truncate text-right">{usageSummary.currentModel}</span></div>
+	                      <div className="flex justify-between gap-3"><span>Last update</span><span>{formatCompactDateTime(usageSummary.lastUpdate)}</span></div>
+	                    </div>
+	                  )}
+	                </div>
+	              )}
+	            </div>
+
+	            <button
+	              onClick={() => setUserLang(languageToggleTarget)}
+	              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/16 bg-white/10 text-sm shadow-[0_10px_24px_-18px_rgba(0,0,0,0.28)] transition-colors hover:bg-white/16"
               aria-label={languageToggleLabel}
               title={languageToggleLabel}
             >
@@ -4579,14 +6233,24 @@ const App: React.FC = () => {
           scrollPaddingBottom: `${contentBottomInset + 32}px`
         }}
       >
-        {error && (
-          <div role="alert" aria-live="assertive" className="md:col-span-2 flex items-center justify-between rounded-[1.75rem] border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 shadow-[0_18px_45px_-32px_rgba(239,68,68,0.18)]">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="px-2 text-xl text-red-500" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
-          </div>
-        )}
+	        {error && (
+	          <div role="alert" aria-live="assertive" className="md:col-span-2 flex items-center justify-between rounded-[1.75rem] border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-700 shadow-[0_18px_45px_-32px_rgba(239,68,68,0.18)]">
+	            <span>{error}</span>
+	            <button onClick={() => { setError(null); setAppError(null); }} className="px-2 text-xl text-red-500" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
+	          </div>
+	        )}
 
-        <section className={activeLayoutPreset.heroClassName}>
+	        {usageSummary.remainingPercent <= 10 && (
+	          <div role="status" aria-live="polite" className={classNames('md:col-span-2 rounded-[1.75rem] border p-4 text-xs font-black shadow-[0_18px_45px_-32px_rgba(32,15,93,0.2)]', usageToneClass)}>
+	            {usageSummary.remainingPercent <= 0
+	              ? "You've reached your AI limit."
+	              : usageSummary.remainingPercent <= 5
+	                ? 'AI usage is nearly exhausted. Use shorter text or optimize usage.'
+	                : 'AI usage is below 10%.'}
+	          </div>
+	        )}
+
+	        <section className={activeLayoutPreset.heroClassName}>
           <img
             src={heroPreviewImage}
             alt=""
@@ -4939,7 +6603,21 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              <button onClick={handleGenerate} disabled={isGenerateDisabled} title={t('generate_btn_hint')} aria-label={t('generate_btn_hint')} className="relative min-w-0 min-h-[58px] overflow-hidden rounded-2xl bg-[#7763BE] px-4 py-3 text-left text-[11px] font-black text-white shadow-[0_18px_36px_-24px_rgba(119,99,190,0.38)] transition-all active:scale-95 disabled:bg-zinc-200 disabled:text-zinc-500">
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerateDisabled}
+                title={t('generate_btn_hint')}
+                aria-label={t('generate_btn_hint')}
+	                className={classNames(
+	                  'relative min-w-0 min-h-[58px] overflow-hidden rounded-2xl px-4 py-3 text-left text-[11px] font-black text-white transition-all active:scale-95 disabled:text-white',
+	                  hasPodcastText
+	                    ? 'bg-gradient-to-r from-[#391BA6] via-[#30168C] to-[#7763BE] shadow-[0_20px_38px_-20px_rgba(57,27,166,0.42)] disabled:bg-gradient-to-r disabled:from-[#391BA6] disabled:via-[#30168C] disabled:to-[#7763BE]'
+	                    : 'bg-[#7763BE] shadow-[0_18px_36px_-24px_rgba(119,99,190,0.38)] disabled:bg-[#7763BE]',
+	                  isGenerateDisabled && !hasPodcastText
+	                    ? 'disabled:opacity-70 disabled:shadow-[0_18px_36px_-24px_rgba(119,99,190,0.28)]'
+	                    : 'disabled:opacity-100 disabled:shadow-[0_20px_38px_-20px_rgba(57,27,166,0.42)]'
+	                )}
+              >
                 {activePrimaryButton && (
                   <div
                     className="absolute inset-y-0 left-0 bg-[linear-gradient(90deg,rgba(57,27,166,0.96),rgba(83,57,190,0.92))] transition-all duration-500"
@@ -4977,9 +6655,11 @@ const App: React.FC = () => {
                         </div>
                       )}
                     </div>
-                  ) : (
-                    t('generate_btn')
-                  )}
+	                  ) : hasReachedEstimatedAiLimit ? (
+	                    "You've reached your AI limit."
+	                  ) : (
+	                    t('generate_btn')
+	                  )}
                 </div>
               </button>
             </div>
@@ -4988,63 +6668,60 @@ const App: React.FC = () => {
         </div>
 
         <section className="order-3 relative space-y-4 md:col-start-2 md:row-start-2 md:order-none md:self-start">
-          <h2 className="px-2 text-left text-lg font-black text-slate-100">{t('library_title')}</h2>
-          <div className={classNames('relative z-20 space-y-3 p-4', activeLayoutPreset.panelClassName)}>
-            <div className="space-y-2">
-              <span className={subtleLabelClass}>{t('sort_label')}</span>
-              <div className="relative z-[70]">
-                <button
-                  type="button"
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={() => {
-                    setShowSortMenu((current) => !current);
-                    setShowLangMenu(false);
-                    setShowVoiceMenu(false);
-                  }}
-                  title={t('sort_label')}
-                  aria-label={t('sort_label')}
-                  className="flex w-full items-center justify-between rounded-[1.6rem] border border-[#d8d0ed] bg-white px-4 py-3.5 text-left shadow-[0_20px_34px_-28px_rgba(32,15,93,0.18)] transition-colors hover:bg-[#f7f4fc]"
+          <div className="flex items-center justify-between gap-3 px-2">
+            <h2 className="min-w-0 text-left text-lg font-black text-slate-100">{t('library_title')}</h2>
+            <div className="relative z-30 shrink-0" ref={sortMenuRef}>
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  setShowSortMenu((current) => !current);
+                  setShowLangMenu(false);
+                  setShowVoiceMenu(false);
+                }}
+                title={t('sort_label')}
+                aria-label={t('sort_label')}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-[#d8d0ed] bg-white px-3 text-[10px] font-black text-zinc-900 shadow-[0_16px_30px_-26px_rgba(32,15,93,0.2)] transition-colors hover:bg-[#f7f4fc]"
+              >
+                <span>{t('sort_label')}</span>
+                <span className="max-w-[72px] truncate text-[#391BA6]">{librarySortLabel}</span>
+                <span aria-hidden="true">▾</span>
+              </button>
+
+              {showSortMenu && (
+                <div
+                  className="custom-scrollbar animate-in fade-in slide-in-from-top-2 absolute right-0 top-full z-[35] mt-2 grid min-w-[150px] gap-1 overflow-hidden rounded-2xl border border-[#d8d0ed] bg-[linear-gradient(180deg,rgba(242,242,242,0.99),rgba(234,229,248,0.97))] p-2 shadow-[0_28px_64px_-36px_rgba(32,15,93,0.3)] duration-200"
                 >
-                  <span className="min-w-0">
-                    <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{t('sort_label')}</span>
-                    <span className="mt-1 block truncate text-sm font-black text-zinc-900">{librarySortLabel}</span>
-                  </span>
-                  <span className="ml-4 shrink-0 rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#391BA6]">▾</span>
-                </button>
+                  {(['newest', 'oldest', 'title'] as LibrarySortMode[]).map((mode) => {
+                    const label = mode === 'oldest' ? t('sort_oldest') : mode === 'title' ? t('sort_title') : t('sort_newest');
+                    const isSelected = librarySortMode === mode;
 
-                {showSortMenu && (
-                  <div
-                    ref={sortMenuRef}
-                    className="custom-scrollbar animate-in fade-in slide-in-from-top-2 absolute inset-x-0 top-full z-[80] mt-2 grid gap-1 overflow-hidden rounded-[1.6rem] border border-[#d8d0ed] bg-[linear-gradient(180deg,rgba(242,242,242,0.99),rgba(234,229,248,0.97))] p-2.5 shadow-[0_28px_64px_-36px_rgba(32,15,93,0.3)] duration-200"
-                  >
-                    {(['newest', 'oldest', 'title'] as LibrarySortMode[]).map((mode) => {
-                      const label = mode === 'oldest' ? t('sort_oldest') : mode === 'title' ? t('sort_title') : t('sort_newest');
-                      const isSelected = librarySortMode === mode;
-
-                      return (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => {
-                            setLibrarySortMode(mode);
-                            setShowSortMenu(false);
-                          }}
-                          title={label}
-                          aria-label={label}
-                          className={classNames(
-                            'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-black transition-colors',
-                            isSelected ? 'bg-[#ece5fb] text-zinc-900 shadow-[0_14px_28px_-26px_rgba(57,27,166,0.26)]' : 'text-zinc-700 hover:bg-[#eee9f8]'
-                          )}
-                        >
-                          <span>{label}</span>
-                          <span className={classNames('text-xs', isSelected ? 'text-[#391BA6]' : 'text-transparent')}>✓</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setLibrarySortMode(mode);
+                          setShowSortMenu(false);
+                        }}
+                        title={label}
+                        aria-label={label}
+                        className={classNames(
+                          'flex items-center justify-between rounded-2xl px-4 py-3 text-left text-[11px] font-black transition-colors',
+                          isSelected ? 'bg-[#ece5fb] text-zinc-900 shadow-[0_14px_28px_-26px_rgba(57,27,166,0.26)]' : 'text-zinc-700 hover:bg-[#eee9f8]'
+                        )}
+                      >
+                        <span>{label}</span>
+                        <span className={classNames('text-xs', isSelected ? 'text-[#391BA6]' : 'text-transparent')}>✓</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+          </div>
+
+          <div className={classNames('relative z-20 space-y-3 p-4', activeLayoutPreset.panelClassName)}>
 
             {libraryCategories.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
@@ -5082,7 +6759,7 @@ const App: React.FC = () => {
             {displayedLibrary.map((ep) => {
               const isActiveEpisode = player.activeEpisode?.id === ep.id;
               const episodeCategories = getEpisodeCategories(ep);
-              const episodeVoice = PREMIUM_VOICES.find((voice) => voice.name === ep.voice)?.label ?? ep.voice;
+              const episodeVoice = getVoiceDisplayName(ep.voice);
               const episodeRuntime = formatTime(getEpisodeDuration(ep));
               const libraryActionClass = isActiveEpisode
                 ? 'border-white/15 bg-white/12 text-white hover:bg-white/18'
@@ -5161,13 +6838,32 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        <span className={classNames(
-                          'rounded-full px-2.5 py-1 text-[9px] font-black',
-                          isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-[#d8d0ed] bg-white text-[#4d3d93]'
-                        )}>
-                          {t('voice_label')}: {episodeVoice}
-                        </span>
-                        {(episodeCategories.length > 0 ? episodeCategories : [t('uncategorized_label')]).map((category) => (
+	                        <span className={classNames(
+	                          'rounded-full px-2.5 py-1 text-[9px] font-black',
+	                          isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-[#d8d0ed] bg-white text-[#4d3d93]'
+	                        )}>
+	                          {t('voice_label')}: {episodeVoice}
+	                        </span>
+	                        {ep.generationCost && (
+	                          <span
+	                            className={classNames(
+	                              'rounded-full px-2.5 py-1 text-[9px] font-black',
+	                              isActiveEpisode ? 'bg-white/14 text-white/88' : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+	                            )}
+	                            title={`Calculated from Gemini API reported usage: ${formatTokenDisplay(ep.generationCost.totalTokens)} tokens across ${ep.generationCost.billableRequests} audio request(s), using paid-tier pricing.`}
+	                          >
+	                            Paid-tier cost: {formatUsdCost(ep.generationCost.totalCostUsd)}
+	                          </span>
+	                        )}
+	                        {ep.generationCost && (
+	                          <span className={classNames(
+	                            'rounded-full px-2.5 py-1 text-[9px] font-black',
+	                            isActiveEpisode ? 'bg-white/12 text-white/84' : 'bg-[#ede8f8] text-[#5f5497]'
+	                          )}>
+	                            {formatTokenDisplay(ep.generationCost.totalTokens)} API tokens
+	                          </span>
+	                        )}
+	                        {(episodeCategories.length > 0 ? episodeCategories : [t('uncategorized_label')]).map((category) => (
                           <span
                             key={`${ep.id}-${category}`}
                             className={classNames(
@@ -5198,48 +6894,50 @@ const App: React.FC = () => {
                       </svg>
                       <span>{t('edit_episode_btn')}</span>
                     </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handlePlaySummary(ep);
-                      }}
-                      className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
-                      title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
-                      aria-label={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}
-                    >
-                      {summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading ? (
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6] animate-spin" />
-                      ) : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? (
-                        <span className="text-[11px] font-black">II</span>
+	                    <button
+	                      onClick={(event) => {
+	                        event.stopPropagation();
+	                        void handlePlaySummary(ep);
+	                      }}
+	                      className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
+	                      title={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+	                      aria-label={summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+	                    >
+	                      {(summaryPlayback.episodeId === ep.id && summaryPlayback.isLoading) || summaryGenerationEpisodeId === ep.id ? (
+	                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6] animate-spin" />
+	                      ) : summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? (
+	                        <span className="text-[11px] font-black">II</span>
                       ) : (
                         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                           <path d="M5 10v4" />
                           <path d="M9 8v8" />
                           <path d="M13 6v12" />
                           <path d="M17 9v6" />
-                          <path d="M21 11v2" />
-                        </svg>
-                      )}
-                      <span>{summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('summary_button_title')}</span>
-                    </button>
-                    {ep.notes && (
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setShowNotesModal(ep);
-                        }}
-                        className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
-                        title={t('notes_title')}
-                        aria-label={t('notes_title')}
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
-                          <path d="M7 4h10a2 2 0 0 1 2 2v12l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2Z" />
-                          <path d="M9 9h6" />
-                          <path d="M9 12h6" />
-                        </svg>
-                        <span>{t('notes_title')}</span>
-                      </button>
-                    )}
+	                          <path d="M21 11v2" />
+	                        </svg>
+	                      )}
+	                      <span>{summaryPlayback.episodeId === ep.id && summaryPlayback.isPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}</span>
+	                    </button>
+	                    <button
+	                      onClick={(event) => {
+	                        event.stopPropagation();
+	                        void handleOpenSummary(ep);
+	                      }}
+	                      className={classNames('inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-black transition-colors', libraryActionClass)}
+	                      title={t('notes_title')}
+	                      aria-label={t('notes_title')}
+	                    >
+	                      {summaryGenerationEpisodeId === ep.id ? (
+	                        <div className="h-3.5 w-3.5 rounded-full border-2 border-[#d8d0ed] border-t-[#391BA6] animate-spin" />
+	                      ) : (
+	                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+	                          <path d="M7 4h10a2 2 0 0 1 2 2v12l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2Z" />
+	                          <path d="M9 9h6" />
+	                          <path d="M9 12h6" />
+	                        </svg>
+	                      )}
+	                      <span>{t('notes_title')}</span>
+	                    </button>
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
@@ -5439,6 +7137,60 @@ const App: React.FC = () => {
         </>
       )}
 
+      {appError && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.22)] p-5 backdrop-blur-sm animate-in fade-in duration-200">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="app-error-title"
+            aria-describedby="app-error-message"
+            className="w-full max-w-[420px] space-y-4 rounded-[2.2rem] border border-red-100 bg-[#fef7f7] p-5 text-left shadow-[0_36px_90px_-54px_rgba(127,29,29,0.42)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">{appError.code}</p>
+                <h3 id="app-error-title" className="mt-2 text-xl font-black tracking-tight text-zinc-950">{appError.title}</h3>
+                <p id="app-error-message" className="mt-2 text-sm leading-relaxed text-zinc-600">{appError.message}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setAppError(null);
+                  setError(null);
+                }}
+                className="text-2xl leading-none text-zinc-400 transition-colors hover:text-zinc-700"
+                title={t('close_btn')}
+                aria-label={t('close_btn')}
+              >
+                ×
+              </button>
+            </div>
+
+	            <div className="grid gap-2 sm:grid-cols-2">
+	              <button
+	                onClick={retryAppErrorAction}
+	                className={classNames('min-h-[48px] rounded-2xl px-4 text-xs font-black uppercase tracking-[0.12em] transition-all active:scale-95', accentButtonClass)}
+	              >
+	                {appError.actionLabel ?? 'Retry'}
+	              </button>
+	              {isAiLimitAppError && (
+	                <button
+	                  onClick={useSmallerPodcastFromError}
+	                  className={classNames('min-h-[48px] rounded-2xl px-4 text-xs font-black uppercase tracking-[0.12em] transition-all active:scale-95', darkButtonClass)}
+	                >
+	                  Use shorter text
+	                </button>
+	              )}
+	              <button
+	                onClick={() => { void copyAppErrorDetails(); }}
+	                className={classNames('min-h-[48px] rounded-2xl px-4 text-xs font-black uppercase tracking-[0.12em] transition-all active:scale-95', isAiLimitAppError ? 'sm:col-span-2' : '', darkButtonClass)}
+	              >
+	                Copy technical details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {player.activeEpisode && (
         <div ref={playerShellRef} className={activeLayoutPreset.playerShellClassName}>
           <div className="pointer-events-auto mx-auto flex w-full max-w-5xl flex-col gap-4">
@@ -5484,7 +7236,12 @@ const App: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 text-left">
-                      <p className={subtleLabelClass}>{t('now_playing_label')}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className={subtleLabelClass}>{t('now_playing_label')}</p>
+                        <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
+                          {t('runtime_label')}: {activeEpisodeRuntime}
+                        </span>
+                      </div>
                       <h4 className="mt-2 truncate text-[15px] font-black tracking-tight text-zinc-950 sm:text-[16px]">
                         {player.activeEpisode.title}
                       </h4>
@@ -5511,40 +7268,57 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full border border-[#d8d0ed] bg-[#eee9f8] px-3 py-1.5 text-[10px] font-black text-[#4d3d93]">
-                        {t('runtime_label')}: {activeEpisodeRuntime}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="ml-auto grid min-w-0 grid-cols-[auto_auto_2.5rem_2.5rem_2.5rem] items-center gap-1.5 max-[380px]:grid-cols-[auto_auto_2.25rem_2.25rem_2.25rem] sm:flex sm:flex-wrap sm:gap-2">
+	                      {player.activeEpisode && (
+	                        <>
+	                          <button
+	                            onClick={() => { if (player.activeEpisode) void handleOpenSummary(player.activeEpisode); }}
+	                            title={t('notes_title')}
+	                            aria-label={t('notes_title')}
+	                            className={classNames('whitespace-nowrap rounded-2xl px-2.5 py-2 text-[9px] font-black uppercase tracking-[0.08em] sm:px-3 sm:text-[10px] sm:tracking-[0.12em]', darkButtonClass)}
+	                          >
+	                            {isActiveEpisodeNotesGenerating ? t('loading_text') : t('notes_title')}
+	                          </button>
+                          <button
+                            onClick={() => { if (player.activeEpisode) void handlePlaySummary(player.activeEpisode); }}
+                            title={isActiveEpisodeSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                            aria-label={isActiveEpisodeSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                            className={classNames('whitespace-nowrap rounded-2xl px-2.5 py-2 text-[9px] font-black uppercase tracking-[0.08em] text-white disabled:bg-zinc-300 disabled:text-zinc-500 sm:px-3 sm:text-[10px] sm:tracking-[0.12em]', accentButtonClass)}
+                          >
+                            {isActiveEpisodeSummaryLoading ? t('loading_text') : isActiveEpisodeSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                          </button>
+                        </>
+                      )}
 
-                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => setShowSpeedControls(prev => !prev)}
-                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                        className={classNames('inline-flex h-10 w-10 items-center justify-center rounded-2xl text-[11px] font-black max-[380px]:h-9 max-[380px]:w-9', darkButtonClass)}
                         title={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
                         aria-label={showSpeedControls ? t('speed_toggle_hide') : t('speed_toggle_show')}
                       >
-                        <span>{t('speed_label')} {playbackRate.toFixed(1)}x</span>
-                        <span aria-hidden="true">{showSpeedControls ? '▴' : '▾'}</span>
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
+                          <path d="M5 16a7 7 0 0 1 14 0" />
+                          <path d="M12 16l4-5" />
+                          <path d="M8 20h8" />
+                        </svg>
                       </button>
 
                       <button
                         onClick={handleAddEpisodeBookmark}
-                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black', darkButtonClass)}
+                        className={classNames('inline-flex h-10 w-10 items-center justify-center rounded-2xl text-[11px] font-black max-[380px]:h-9 max-[380px]:w-9', darkButtonClass)}
                         title={t('add_bookmark_btn')}
                         aria-label={t('add_bookmark_btn')}
                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
                           <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z" />
                         </svg>
-                        <span>{t('add_bookmark_btn')}</span>
                       </button>
 
                       <button
                         onClick={() => { if (player.activeEpisode) void handleDownloadEpisode(player.activeEpisode); }}
                         disabled={isDownloading === player.activeEpisode.id || player.activeEpisode.generationStatus === 'processing' || player.activeEpisode.generationStatus === 'failed'}
-                        className={classNames('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[11px] font-black disabled:cursor-not-allowed disabled:opacity-50', darkButtonClass)}
+                        className={classNames('inline-flex h-10 w-10 items-center justify-center rounded-2xl text-[11px] font-black disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-9 max-[380px]:w-9', darkButtonClass)}
                         title={t('download_mp3_title')}
                         aria-label={t('download_mp3_title')}
                       >
@@ -5557,8 +7331,8 @@ const App: React.FC = () => {
                             <path d="M5 19h14" />
                           </svg>
                         )}
-                        <span>{t('download_mp3_title')}</span>
                       </button>
+
                     </div>
                   </div>
                 </div>
@@ -5803,7 +7577,19 @@ const App: React.FC = () => {
                 {resolvedModalNotes ? (
                   <>
                     <section className="rounded-3xl bg-gradient-to-br from-[#391BA6] via-[#30168C] to-[#7763BE] p-6 text-white shadow-lg">
-                      <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{notesLabels.summary}</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">{notesLabels.summary}</p>
+                        {!isEditingSummary && (
+                          <button
+                            onClick={() => setIsEditingSummary(true)}
+                            title={t('edit_summary_btn')}
+                            aria-label={t('edit_summary_btn')}
+                            className="rounded-2xl border border-white/18 bg-white/12 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-white/18"
+                          >
+                            {t('edit_summary_btn')}
+                          </button>
+                        )}
+                      </div>
                       {isEditingSummary ? (
                         <div className="mt-3 space-y-3">
                           <div className="space-y-1">
@@ -5833,7 +7619,7 @@ const App: React.FC = () => {
                         </div>
                       ) : (
                         <>
-                          <h4 className="mt-2 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
+                          <h4 className="mt-3 text-lg font-black leading-tight">{resolvedModalNotes.title}</h4>
                           <p className="mt-3 text-sm leading-relaxed text-white/85">{resolvedModalNotes.summary}</p>
                         </>
                       )}
@@ -5865,33 +7651,23 @@ const App: React.FC = () => {
                           </button>
                         </>
                       ) : (
-                        <>
-                          <button
-                            onClick={() => setIsEditingSummary(true)}
-                            title={t('edit_summary_btn')}
-                            aria-label={t('edit_summary_btn')}
-                            className={classNames('w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all active:scale-95', darkButtonClass)}
-                          >
-                            {t('edit_summary_btn')}
-                          </button>
-                          <button
-                            onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
-                            title={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
-                            aria-label={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
-                            className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all ${
-                              isModalSummaryPlaying
-                                ? 'border border-[#d8d0ed] bg-white/92 text-zinc-700'
-                                : 'bg-gradient-to-r from-[#391BA6] to-[#7763BE] text-white shadow-lg shadow-[#391BA6]/20'
-                              }`}
-                          >
-                            {isModalSummaryLoading ? (
-                              <span className="flex items-center justify-center gap-2">
-                                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                {t('listen_summary_btn')}
-                              </span>
-                            ) : isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
-                          </button>
-                        </>
+                        <button
+                          onClick={() => { if (showNotesModal) void handlePlaySummary(showNotesModal); }}
+                          title={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                          aria-label={isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                          className={`w-full rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-wide transition-all sm:col-span-2 ${
+                            isModalSummaryPlaying
+                              ? 'border border-[#d8d0ed] bg-white/92 text-zinc-700'
+                              : 'bg-gradient-to-r from-[#391BA6] to-[#7763BE] text-white shadow-lg shadow-[#391BA6]/20'
+                            }`}
+                        >
+                          {isModalSummaryLoading ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              {t('listen_summary_btn')}
+                            </span>
+                          ) : isModalSummaryPlaying ? t('pause_summary_btn') : t('listen_summary_btn')}
+                        </button>
                       )}
                     </div>
 
@@ -5978,7 +7754,7 @@ const App: React.FC = () => {
 
       {editingEpisode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.16)] p-6 backdrop-blur-sm animate-in fade-in duration-300">
-          <div role="dialog" aria-modal="true" aria-labelledby="category-editor-title" className="w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.34)] animate-in zoom-in-95 duration-300">
+	          <div role="dialog" aria-modal="true" aria-labelledby="category-editor-title" className="max-h-[calc(100dvh-3rem)] w-full max-w-lg overflow-y-auto rounded-[2.5rem] border border-[#d8d0ed] bg-[#f1edf9] shadow-[0_36px_90px_-54px_rgba(32,15,93,0.34)] animate-in zoom-in-95 duration-300">
             <div className="p-8 space-y-5">
               <div className="flex justify-between items-center gap-4">
                 <div className="min-w-0">
@@ -5988,35 +7764,75 @@ const App: React.FC = () => {
                 <button onClick={closeEpisodeEditor} className="text-2xl text-zinc-400 hover:text-zinc-700" title={t('close_btn')} aria-label={t('close_btn')}>×</button>
               </div>
 
-              <div className="space-y-4 rounded-3xl border border-[#d8d0ed] bg-white/92 p-5">
-                <div className="space-y-3">
-                  <label htmlFor="episode-title" className={subtleLabelClass}>
-                    {t('episode_title_label')}
-                  </label>
-                  <input
-                    id="episode-title"
-                    name="episode-title"
-                    value={episodeTitleDraft}
-                    onChange={(e) => setEpisodeTitleDraft(e.target.value)}
-                    className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
-                  />
-                </div>
+	              <div className="space-y-4 rounded-3xl border border-[#d8d0ed] bg-white/92 p-5">
+	                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#ede8f8]/92 p-1">
+	                  <button
+	                    type="button"
+	                    onClick={() => setEpisodeEditorTab('details')}
+	                    className={classNames(
+	                      'rounded-2xl px-4 py-3 text-[11px] font-black transition-colors',
+	                      episodeEditorTab === 'details' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+	                    )}
+	                  >
+	                    {t('categories_title')}
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => setEpisodeEditorTab('text')}
+	                    className={classNames(
+	                      'rounded-2xl px-4 py-3 text-[11px] font-black transition-colors',
+	                      episodeEditorTab === 'text' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+	                    )}
+	                  >
+	                    Hela texten
+	                  </button>
+	                </div>
 
-                <div className="space-y-3">
-                  <label htmlFor="episode-categories" className={subtleLabelClass}>
-                    {t('categories_title')}
-                  </label>
-                  <input
-                    id="episode-categories"
-                    name="episode-categories"
-                    value={categoryDraft}
-                    onChange={(e) => setCategoryDraft(e.target.value)}
-                    placeholder={t('category_placeholder')}
-                    className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
-                  />
-                  <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
-                </div>
-              </div>
+	                {episodeEditorTab === 'details' ? (
+	                  <>
+	                    <div className="space-y-3">
+	                      <label htmlFor="episode-title" className={subtleLabelClass}>
+	                        {t('episode_title_label')}
+	                      </label>
+	                      <input
+	                        id="episode-title"
+	                        name="episode-title"
+	                        value={episodeTitleDraft}
+	                        onChange={(e) => setEpisodeTitleDraft(e.target.value)}
+	                        className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+	                      />
+	                    </div>
+
+	                    <div className="space-y-3">
+	                      <label htmlFor="episode-categories" className={subtleLabelClass}>
+	                        {t('categories_title')}
+	                      </label>
+	                      <input
+	                        id="episode-categories"
+	                        name="episode-categories"
+	                        value={categoryDraft}
+	                        onChange={(e) => setCategoryDraft(e.target.value)}
+	                        placeholder={t('category_placeholder')}
+	                        className="w-full rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+	                      />
+	                      <p className="text-xs leading-relaxed text-zinc-400">{t('category_hint')}</p>
+	                    </div>
+	                  </>
+	                ) : (
+	                  <div className="space-y-3">
+	                    <label htmlFor="episode-full-text" className={subtleLabelClass}>
+	                      Hela texten
+	                    </label>
+	                    <textarea
+	                      id="episode-full-text"
+	                      name="episode-full-text"
+	                      value={episodeTextDraft}
+	                      onChange={(e) => setEpisodeTextDraft(e.target.value)}
+	                      className="min-h-[320px] w-full resize-y rounded-2xl border border-[#d8d0ed] bg-white/92 px-4 py-3 text-sm leading-relaxed text-zinc-900 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+	                    />
+	                  </div>
+	                )}
+	              </div>
 
               <button
                 onClick={saveEpisodeEdits}

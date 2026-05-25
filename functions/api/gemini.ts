@@ -10,7 +10,17 @@ type CloudflarePagesContext = {
 };
 
 export const onRequest = async (context: CloudflarePagesContext) => {
-  return handleGeminiRequest(context.request, {
-    apiKey: context.env.GEMINI_API_KEY,
-  });
+  try {
+    return await handleGeminiRequest(context.request, {
+      apiKey: context.env.GEMINI_API_KEY,
+    });
+  } catch (error) {
+    console.error("Unhandled Gemini function error:", error);
+    return new Response(JSON.stringify({ error: "Ett oväntat serverfel uppstod i API-funktionen." }), {
+      status: 500,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+      },
+    });
+  }
 };

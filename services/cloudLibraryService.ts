@@ -1,4 +1,4 @@
-import type { PodcastEpisode } from '../types';
+import type { EpisodeGenerationCost, PodcastEpisode } from '../types';
 import { supabase } from './supabaseClient';
 
 const CLOUD_EPISODES_TABLE = 'podcast_episodes';
@@ -9,6 +9,23 @@ type CloudEpisodeRow = {
   episode_id: string;
   payload: PodcastEpisode | null;
   updated_at: string;
+};
+
+type CloudGenerationUsageRow = {
+  episode_id: string;
+  provider: 'Gemini';
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_cost_usd: number | string;
+  output_cost_usd: number | string;
+  total_cost_usd: number | string;
+  pricing: {
+    inputUsdPerMillionTokens?: number;
+    outputUsdPerMillionTokens?: number;
+  } | null;
+  created_at: string;
 };
 
 const isStorageNotFoundError = (error: unknown) => {
@@ -44,6 +61,7 @@ const normalizeEpisodePayload = (episodeId: string, payload: PodcastEpisode | nu
     chunkDurations: Array.isArray(candidate.chunkDurations) ? candidate.chunkDurations : [],
     readyChunkCount: typeof candidate.readyChunkCount === 'number' ? candidate.readyChunkCount : undefined,
     generationStatus: candidate.generationStatus,
+    generationCost: candidate.generationCost,
     playbackRate: typeof candidate.playbackRate === 'number' ? candidate.playbackRate : 1,
     lastPosition: candidate.lastPosition,
   };
@@ -57,6 +75,31 @@ const serializeEpisode = (episode: PodcastEpisode): PodcastEpisode => ({
   playbackRate: typeof episode.playbackRate === 'number' ? episode.playbackRate : 1,
 });
 
+const sumCloudGenerationCosts = (rows: CloudGenerationUsageRow[]) => {
+  const totals = new Map<string, EpisodeGenerationCost>();
+
+  rows.forEach((row) => {
+    const current = totals.get(row.episode_id);
+    totals.set(row.episode_id, {
+      provider: 'Gemini',
+      model: row.model,
+      currency: 'USD',
+      inputTokens: (current?.inputTokens ?? 0) + row.input_tokens,
+      outputTokens: (current?.outputTokens ?? 0) + row.output_tokens,
+      totalTokens: (current?.totalTokens ?? 0) + row.total_tokens,
+      inputCostUsd: (current?.inputCostUsd ?? 0) + Number(row.input_cost_usd),
+      outputCostUsd: (current?.outputCostUsd ?? 0) + Number(row.output_cost_usd),
+      totalCostUsd: (current?.totalCostUsd ?? 0) + Number(row.total_cost_usd),
+      billableRequests: (current?.billableRequests ?? 0) + 1,
+      inputUsdPerMillionTokens: row.pricing?.inputUsdPerMillionTokens ?? current?.inputUsdPerMillionTokens ?? 0,
+      outputUsdPerMillionTokens: row.pricing?.outputUsdPerMillionTokens ?? current?.outputUsdPerMillionTokens ?? 0,
+      updatedAt: Math.max(current?.updatedAt ?? 0, new Date(row.created_at).getTime()),
+    });
+  });
+
+  return totals;
+};
+
 export const getCloudChunkPath = (userId: string, audioBlobId: string, index: number) =>
   `${userId}/${audioBlobId}/chunk-${index}.wav`;
 
@@ -68,17 +111,35 @@ export const fetchCloudEpisodes = async (userId: string): Promise<PodcastEpisode
     return [];
   }
 
-  const { data, error } = await supabase
-    .from(CLOUD_EPISODES_TABLE)
-    .select('user_id, episode_id, payload, updated_at')
-    .eq('user_id', userId)
-    .order('updated_at', { ascending: false });
+  const [{ data, error }, { data: usageData, error: usageError }] = await Promise.all([
+    supabase
+      .from(CLOUD_EPISODES_TABLE)
+      .select('user_id, episode_id, payload, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false }),
+    supabase
+      .from('podcast_generation_usage')
+      .select('episode_id, provider, model, input_tokens, output_tokens, total_tokens, input_cost_usd, output_cost_usd, total_cost_usd, pricing, created_at')
+      .eq('user_id', userId)
+      .eq('usage_category', 'podcast_audio'),
+  ]);
 
   if (error) {
     throw error;
   }
 
-  return (data as CloudEpisodeRow[]).map((row) => normalizeEpisodePayload(row.episode_id, row.payload));
+  if (usageError) {
+    console.warn('Could not read podcast generation usage', usageError);
+  }
+  const serverCosts = sumCloudGenerationCosts((usageData as CloudGenerationUsageRow[] | null) ?? []);
+
+  return (data as CloudEpisodeRow[]).map((row) => {
+    const episode = normalizeEpisodePayload(row.episode_id, row.payload);
+    return {
+      ...episode,
+      generationCost: serverCosts.get(row.episode_id) ?? episode.generationCost,
+    };
+  });
 };
 
 export const upsertCloudEpisodes = async (userId: string, episodes: PodcastEpisode[]): Promise<void> => {

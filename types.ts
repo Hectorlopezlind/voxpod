@@ -29,6 +29,37 @@ export interface EpisodeBookmark {
   createdAt: number;
 }
 
+export interface GeminiGenerationUsage {
+  provider: 'Gemini';
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  totalCostUsd: number;
+  inputUsdPerMillionTokens: number;
+  outputUsdPerMillionTokens: number;
+  responseId?: string;
+  recordedAt: number;
+}
+
+export interface EpisodeGenerationCost {
+  provider: 'Gemini';
+  model: string;
+  currency: 'USD';
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  totalCostUsd: number;
+  billableRequests: number;
+  inputUsdPerMillionTokens: number;
+  outputUsdPerMillionTokens: number;
+  updatedAt: number;
+}
+
 export interface PodcastEpisode {
   id: string;
   title: string;
@@ -44,6 +75,7 @@ export interface PodcastEpisode {
   chunkDurations?: number[];
   readyChunkCount?: number;
   generationStatus?: 'processing' | 'ready' | 'failed';
+  generationCost?: EpisodeGenerationCost;
   playbackRate: number;
   lastPosition?: {
     chunkIndex: number;

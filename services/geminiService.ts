@@ -1,6 +1,8 @@
-import { VoiceName, ReadingSpeed, EpisodeNotes } from "../types";
+import { VoiceName, ReadingSpeed, EpisodeNotes, GeminiGenerationUsage } from "../types";
+import { supabase } from "./supabaseClient";
 
 const GEMINI_API_ROUTE = "/api/gemini";
+const MAX_GEMINI_RETRY_ATTEMPTS = 4;
 
 export type GeminiRetryState = {
   attempt: number;
@@ -15,6 +17,16 @@ export type GeminiRequestOptions = {
 
 export type GeminiTtsOptions = GeminiRequestOptions & {
   languageHint?: string;
+  usageContext?: {
+    episodeId: string;
+    chunkIndex: number;
+    usageCategory: "podcast_audio" | "summary_audio";
+  };
+};
+
+export type GeminiTtsResult = {
+  audio: string;
+  usage?: GeminiGenerationUsage;
 };
 
 type GeminiStreamPayload = {
@@ -75,17 +87,41 @@ const isRetryableHttpStatus = (status: number) => status === 408 || status === 4
 const isRetryableMessage = (message: string) => {
   const normalized = message.toLowerCase();
 
-  if (
-    normalized.includes("ogiltig") ||
-    normalized.includes("saknas.") ||
-    normalized.includes("saknas eller är ogiltig") ||
-    normalized.includes("okänd") ||
-    normalized.includes("method not allowed")
-  ) {
-    return false;
-  }
+	  if (
+	    normalized.includes("ogiltig") ||
+	    normalized.includes("saknas.") ||
+	    normalized.includes("saknas eller är ogiltig") ||
+	    normalized.includes("okänd") ||
+	    normalized.includes("method not allowed") ||
+	    normalized.includes("quota") ||
+	    normalized.includes("free tier") ||
+	    normalized.includes("generation limit") ||
+	    normalized.includes("no credits") ||
+	    normalized.includes("ai limit reached") ||
+	    normalized.includes("billing") ||
+	    normalized.includes("resource_exhausted") ||
+	    normalized.includes("generate_content_free_tier_requests")
+	  ) {
+	    return false;
+	  }
 
   return true;
+};
+
+const getAuthHeaders = async () => {
+  const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+  const token = data.session?.access_token;
+  if (!token) {
+    throw new GeminiRequestError("Du måste vara inloggad för att använda VoxPod.", {
+      status: 401,
+      retryable: false,
+    });
+  }
+
+  return {
+    "content-type": "application/json",
+    "authorization": `Bearer ${token}`,
+  };
 };
 
 const normalizeUnknownError = (error: unknown) => {
@@ -114,9 +150,7 @@ const postGemini = async <T>(
     try {
       const response = await fetch(GEMINI_API_ROUTE, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: await getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -151,6 +185,13 @@ const postGemini = async <T>(
         await waitForOnline();
       }
       await sleep(delayMs);
+
+      if (attempt >= MAX_GEMINI_RETRY_ATTEMPTS) {
+        throw new GeminiRequestError(normalizedError.message, {
+          status: normalizedError.status,
+          retryable: false,
+        });
+      }
     }
   }
 };
@@ -161,9 +202,7 @@ const streamGeminiText = async (
 ) => {
   const response = await fetch(GEMINI_API_ROUTE, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
+    headers: await getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -235,16 +274,19 @@ export const generateTTS = async (
   voice: VoiceName,
   speed: ReadingSpeed = ReadingSpeed.Normal,
   options?: GeminiTtsOptions
-): Promise<string> => {
-  const result = await postGemini<{ audio: string }>({
+): Promise<GeminiTtsResult> => {
+  const result = await postGemini<GeminiTtsResult>({
     action: "tts",
     text,
     voice,
     speed,
     languageHint: options?.languageHint,
+    episodeId: options?.usageContext?.episodeId,
+    chunkIndex: options?.usageContext?.chunkIndex,
+    usageCategory: options?.usageContext?.usageCategory,
   }, options);
 
-  return result.audio;
+  return result;
 };
 
 export const translateText = async (

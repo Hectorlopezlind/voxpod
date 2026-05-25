@@ -125,6 +125,29 @@ export const initAudioElement = () => {
   return audioEl;
 };
 
+const revokeBlobUrlAfterSourceSwap = (url: string, el: HTMLAudioElement) => {
+  let isRevoked = false;
+  let fallbackTimer: number | null = null;
+
+  const cleanup = () => {
+    el.removeEventListener('playing', revoke);
+    if (fallbackTimer !== null) {
+      window.clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+  };
+
+  const revoke = () => {
+    if (isRevoked) return;
+    isRevoked = true;
+    cleanup();
+    URL.revokeObjectURL(url);
+  };
+
+  el.addEventListener('playing', revoke, { once: true });
+  fallbackTimer = window.setTimeout(revoke, 15000);
+};
+
 export const unlockAudioPlayback = async () => {
   if (audioUnlocked) {
     return true;
@@ -148,13 +171,15 @@ export const unlockAudioPlayback = async () => {
 
 export const loadAudioFromBuffer = (wavBuffer: ArrayBuffer) => {
   const el = initAudioElement();
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl);
-  }
+  const previousBlobUrl = currentBlobUrl;
   const blob = new Blob([wavBuffer], { type: 'audio/wav' });
   currentBlobUrl = URL.createObjectURL(blob);
   el.src = currentBlobUrl;
   el.load();
+
+  if (previousBlobUrl) {
+    revokeBlobUrlAfterSourceSwap(previousBlobUrl, el);
+  }
 };
 
 export const playAudio = () => {
