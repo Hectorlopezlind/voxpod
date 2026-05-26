@@ -9,6 +9,8 @@ const JSON_HEADERS = {
 
 type GeminiHandlerOptions = {
   apiKey?: string | null;
+  turnstileSecretKey?: string | null;
+  turnstileSiteKey?: string | null;
 };
 
 type AuthenticatedRequest = {
@@ -93,6 +95,8 @@ const NOTES_RESPONSE_SCHEMA = {
 
 type GeminiAction =
   | "tts"
+  | "demoTts"
+  | "demoConfig"
   | "translate"
   | "extractImage"
   | "extractPdf"
@@ -112,6 +116,13 @@ type GeminiRequestBody =
       chunkIndex?: number;
       usageCategory?: "podcast_audio" | "summary_audio";
     }
+  | {
+      action: "demoTts";
+      text: string;
+      turnstileToken: string;
+      deviceId: string;
+    }
+  | { action: "demoConfig" }
   | { action: "translate"; text: string; targetLanguage: string }
   | { action: "extractImage"; base64Data: string; mimeType: string }
   | { action: "extractPdf"; base64Data: string }
@@ -121,6 +132,7 @@ type GeminiRequestBody =
   | { action: "generateNotes"; text: string };
 
 type TtsBody = Extract<GeminiRequestBody, { action: "tts" }>;
+type DemoTtsBody = Extract<GeminiRequestBody, { action: "demoTts" }>;
 type TranslateBody = Extract<GeminiRequestBody, { action: "translate" }>;
 type ExtractImageBody = Extract<GeminiRequestBody, { action: "extractImage" }>;
 type ExtractPdfBody = Extract<GeminiRequestBody, { action: "extractPdf" }>;
@@ -156,6 +168,76 @@ const getAiClient = (apiKeyOverride?: string | null) => {
 const badRequest = (message: string) => json({ error: message }, 400);
 
 const unauthorized = () => json({ error: "Du måste vara inloggad för att använda VoxPod." }, 401);
+
+const PUBLIC_DEMO_MAX_CHARACTERS = 1680;
+const PUBLIC_DEMO_DEVICE_LIMIT_PER_DAY = 1;
+const PUBLIC_DEMO_IP_LIMIT_PER_DAY = 5;
+const PUBLIC_DEMO_WINDOW_SECONDS = 24 * 60 * 60;
+
+const getSupabasePublicClient = () => {
+  const supabaseUrl = getRuntimeEnvValue("VITE_SUPABASE_URL") || getRuntimeEnvValue("SUPABASE_URL") || DEFAULT_SUPABASE_URL;
+  const supabaseAnonKey = getRuntimeEnvValue("VITE_SUPABASE_ANON_KEY") || getRuntimeEnvValue("SUPABASE_ANON_KEY") || DEFAULT_SUPABASE_ANON_KEY;
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+};
+
+const sha256 = async (value: string) => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+};
+
+const getClientIp = (request: Request) =>
+  request.headers.get("CF-Connecting-IP") ||
+  request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  "local-development";
+
+const verifyTurnstile = async (token: string, request: Request, options?: GeminiHandlerOptions) => {
+  const secret = options?.turnstileSecretKey ?? getRuntimeEnvValue("TURNSTILE_SECRET_KEY");
+  if (!secret) {
+    throw new Error("Public demo is not configured: TURNSTILE_SECRET_KEY is missing.");
+  }
+
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: new URLSearchParams({
+      secret,
+      response: token,
+      remoteip: getClientIp(request),
+    }),
+  });
+  const result = await response.json() as { success?: boolean };
+  if (!result.success) {
+    return false;
+  }
+  return true;
+};
+
+const claimPublicDemoUsage = async (request: Request, deviceId: string) => {
+  const client = getSupabasePublicClient();
+  const ipKey = `ip:${await sha256(getClientIp(request))}`;
+  const deviceKey = `device:${await sha256(deviceId)}`;
+  const claim = async (clientKey: string, maxRequests: number) => {
+    const { data, error } = await client.rpc("claim_public_demo_generation", {
+      p_client_key: clientKey,
+      p_max_requests: maxRequests,
+      p_window_seconds: PUBLIC_DEMO_WINDOW_SECONDS,
+    });
+    if (error) {
+      console.error("Could not claim public demo rate limit:", error);
+      throw new Error("Public demo rate limiting is not configured.");
+    }
+    return data === true;
+  };
+
+  if (!await claim(ipKey, PUBLIC_DEMO_IP_LIMIT_PER_DAY)) {
+    return false;
+  }
+  return claim(deviceKey, PUBLIC_DEMO_DEVICE_LIMIT_PER_DAY);
+};
 
 const validateAuthenticatedRequest = async (request: Request): Promise<AuthenticatedRequest | null> => {
   const authHeader = request.headers.get("authorization") ?? "";
@@ -809,7 +891,7 @@ const extractPdfTextFromBase64 = async (
   return text;
 };
 
-const handleTts = async (body: TtsBody, auth: AuthenticatedRequest, options?: GeminiHandlerOptions) => {
+const handleTts = async (body: TtsBody, auth: AuthenticatedRequest | null, options?: GeminiHandlerOptions) => {
   if (!isNonEmptyString(body.text)) return badRequest("Text saknas.");
   if (!validateVoice(body.voice)) return badRequest("Ogiltig röst.");
   if (!validateSpeed(body.speed)) return badRequest("Ogiltig uppläsningshastighet.");
@@ -843,11 +925,39 @@ const handleTts = async (body: TtsBody, auth: AuthenticatedRequest, options?: Ge
   }
 
   const usage = buildTtsUsage(response);
-  if (usage) {
+  if (usage && auth) {
     await logTtsUsage(auth, body, usage);
   }
 
   return json({ audio, usage });
+};
+
+const handleDemoTts = async (body: DemoTtsBody, request: Request, options?: GeminiHandlerOptions) => {
+  if (!isNonEmptyString(body.text)) return badRequest("Skriv en kort text för att prova VoxPod.");
+  if (body.text.trim().length > PUBLIC_DEMO_MAX_CHARACTERS) {
+    return badRequest("Provet är begränsat till cirka 2 minuter. Korta texten och försök igen.");
+  }
+  if (!isNonEmptyString(body.turnstileToken)) return badRequest("Bekräfta att du är mänsklig först.");
+  if (!isNonEmptyString(body.deviceId) || body.deviceId.length > 128) return badRequest("Ogiltig demo-enhet.");
+
+  if (!await verifyTurnstile(body.turnstileToken, request, options)) {
+    return json({ error: "Verifieringen misslyckades. Försök igen." }, 403);
+  }
+  if (!await claimPublicDemoUsage(request, body.deviceId)) {
+    return json({ error: "Du har redan provat gratisdemon idag. Logga in för att fortsätta." }, 429);
+  }
+
+  return handleTts({
+    action: "tts",
+    text: body.text,
+    voice: VoiceName.Kore,
+    speed: ReadingSpeed.Normal,
+  }, null, options);
+};
+
+const handleDemoConfig = (options?: GeminiHandlerOptions) => {
+  const siteKey = options?.turnstileSiteKey ?? getRuntimeEnvValue("TURNSTILE_SITE_KEY") ?? "";
+  return json({ turnstileSiteKey: siteKey });
 };
 
 const handleTranslate = async (body: TranslateBody, options?: GeminiHandlerOptions) => {
@@ -1048,17 +1158,24 @@ export const handleGeminiRequest = async (
     return json({ error: "Method not allowed." }, 405);
   }
 
-  const authenticatedRequest = await validateAuthenticatedRequest(request);
-  if (!authenticatedRequest) {
-    return unauthorized();
-  }
-
   const body = await parseJsonBody(request);
   if (!body) {
     return badRequest("Ogiltig JSON-body.");
   }
 
   try {
+    if (body.action === "demoTts") {
+      return await handleDemoTts(body as DemoTtsBody, request, options);
+    }
+    if (body.action === "demoConfig") {
+      return handleDemoConfig(options);
+    }
+
+    const authenticatedRequest = await validateAuthenticatedRequest(request);
+    if (!authenticatedRequest) {
+      return unauthorized();
+    }
+
     switch (body.action as GeminiAction) {
       case "tts":
         return await handleTts(body as TtsBody, authenticatedRequest, options);

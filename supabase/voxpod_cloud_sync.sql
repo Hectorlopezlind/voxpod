@@ -100,6 +100,66 @@ for insert
 to authenticated
 with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
 
+create table if not exists public.podcast_demo_rate_limits (
+  client_key text primary key,
+  window_started_at timestamptz not null default timezone('utc', now()),
+  request_count integer not null default 0 check (request_count >= 0),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.podcast_demo_rate_limits enable row level security;
+
+create or replace function public.claim_public_demo_generation(
+  p_client_key text,
+  p_max_requests integer default 1,
+  p_window_seconds integer default 86400
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_limit public.podcast_demo_rate_limits%rowtype;
+begin
+  if p_client_key is null or length(p_client_key) < 10 or p_max_requests < 1 or p_window_seconds < 60 then
+    return false;
+  end if;
+
+  insert into public.podcast_demo_rate_limits (client_key, request_count)
+  values (p_client_key, 0)
+  on conflict (client_key) do nothing;
+
+  select *
+  into current_limit
+  from public.podcast_demo_rate_limits
+  where client_key = p_client_key
+  for update;
+
+  if current_limit.window_started_at <= timezone('utc', now()) - make_interval(secs => p_window_seconds) then
+    update public.podcast_demo_rate_limits
+    set window_started_at = timezone('utc', now()),
+        request_count = 1,
+        updated_at = timezone('utc', now())
+    where client_key = p_client_key;
+    return true;
+  end if;
+
+  if current_limit.request_count < p_max_requests then
+    update public.podcast_demo_rate_limits
+    set request_count = request_count + 1,
+        updated_at = timezone('utc', now())
+    where client_key = p_client_key;
+    return true;
+  end if;
+
+  return false;
+end;
+$$;
+
+revoke all on function public.claim_public_demo_generation(text, integer, integer) from public;
+grant execute on function public.claim_public_demo_generation(text, integer, integer) to anon, authenticated;
+
 insert into storage.buckets (id, name, public)
 values ('Audio', 'Audio', false)
 on conflict (id) do update set public = excluded.public;

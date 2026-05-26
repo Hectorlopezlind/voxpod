@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { VoiceName, PodcastEpisode, PlayerState, EpisodeNotes, EpisodeBookmark, GeminiGenerationUsage, EpisodeGenerationCost } from './types';
-import { generateTTS, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf, extractWebPageText } from './services/geminiService';
+import { generateTTS, generatePublicDemoTTS, fetchPublicDemoConfiguration, translateText, generateNotes, GeminiRequestOptions, streamTextFromImage, streamTextFromPdf, extractWebPageText } from './services/geminiService';
 import { saveAudioBlob, getAudioBlob, deleteAudioBlob, deleteAudioBlobsByPrefix, getImportTextCache, saveImportTextCache, getSummaryCache, saveSummaryCache } from './services/dbService';
 import { DOCUMENT_UPLOAD_ACCEPT, isTextDocumentFile, streamLocalDocumentText } from './services/documentService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
@@ -869,6 +869,11 @@ const LIBRARY_PERSIST_DELAY_MS = 180;
 const CLOUD_UPLOAD_TIMEOUT_MS = 90_000;
 const AUDIO_SAMPLE_RATE = 24000;
 const ESTIMATED_CHARACTERS_PER_SECOND = 14;
+const MAX_PODCAST_EPISODE_SECONDS = 60 * 60;
+const MAX_PODCAST_EPISODE_CHARACTERS = MAX_PODCAST_EPISODE_SECONDS * ESTIMATED_CHARACTERS_PER_SECOND;
+const PUBLIC_DEMO_MAX_SECONDS = 2 * 60;
+const PUBLIC_DEMO_MAX_CHARACTERS = PUBLIC_DEMO_MAX_SECONDS * ESTIMATED_CHARACTERS_PER_SECOND;
+const PUBLIC_DEMO_DEVICE_ID_KEY = 'voxpod_public_demo_device_id';
 const CHUNK_POLL_INTERVAL_MS = 180;
 const CHUNK_LOAD_TIMEOUT_MS = 45_000;
 const CHUNK_GENERATION_LOAD_TIMEOUT_MS = 180_000;
@@ -916,6 +921,16 @@ type AiUsageState = {
   monthKey: string;
   monthlyBudgetTokens: number;
   entries: AiUsageEntry[];
+};
+
+type PodcastGenerationPreview = {
+  episodeTexts: string[];
+  durationSeconds: number;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
 };
 
 type AiUsageStatus = 'green' | 'orange' | 'red' | 'empty';
@@ -2467,6 +2482,13 @@ const App: React.FC = () => {
   const [isCameraBooting, setIsCameraBooting] = useState(false);
   const [isCameraImporting, setIsCameraImporting] = useState(false);
   const [currentRoutePath, setCurrentRoutePath] = useState(getCurrentRoutePath);
+  const [pendingGenerationPreview, setPendingGenerationPreview] = useState<PodcastGenerationPreview | null>(null);
+  const [demoText, setDemoText] = useState('');
+  const [demoTurnstileSiteKey, setDemoTurnstileSiteKey] = useState('');
+  const [demoTurnstileToken, setDemoTurnstileToken] = useState('');
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [isGeneratingDemo, setIsGeneratingDemo] = useState(false);
+  const [demoAudioUrl, setDemoAudioUrl] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -2518,6 +2540,8 @@ const App: React.FC = () => {
   const liveGenerationRef = useRef<LiveGenerationState | null>(null);
   const liveGenerationPumpRef = useRef(false);
   const intendedRouteRef = useRef(DEFAULT_AUTHENTICATED_PATH);
+  const demoTurnstileContainerRef = useRef<HTMLDivElement>(null);
+  const demoTurnstileWidgetIdRef = useRef<string | null>(null);
 
   const [player, setPlayer] = useState<PlayerState>({
     isPlaying: false,
@@ -2531,6 +2555,66 @@ const App: React.FC = () => {
 	  useEffect(() => {
 	    playerRef.current = player;
 	  }, [player]);
+
+  useEffect(() => () => {
+    if (demoAudioUrl) {
+      URL.revokeObjectURL(demoAudioUrl);
+    }
+  }, [demoAudioUrl]);
+
+  useEffect(() => {
+    if (authUser || !isAuthReady) {
+      return;
+    }
+    void fetchPublicDemoConfiguration()
+      .then((configuration) => setDemoTurnstileSiteKey(configuration.turnstileSiteKey || ''))
+      .catch(() => setDemoTurnstileSiteKey(''));
+  }, [authUser, isAuthReady]);
+
+  useEffect(() => {
+    if (authUser || !isAuthReady || !demoTurnstileSiteKey || !demoTurnstileContainerRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    const renderWidget = () => {
+      if (cancelled || !window.turnstile || !demoTurnstileContainerRef.current || demoTurnstileWidgetIdRef.current) {
+        return;
+      }
+      demoTurnstileWidgetIdRef.current = window.turnstile.render(demoTurnstileContainerRef.current, {
+        sitekey: demoTurnstileSiteKey,
+        theme: 'light',
+        callback: setDemoTurnstileToken,
+        'expired-callback': () => setDemoTurnstileToken(''),
+        'error-callback': () => setDemoTurnstileToken(''),
+      });
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[data-voxpod-turnstile]');
+    if (existingScript) {
+      if (window.turnstile) {
+        renderWidget();
+      } else {
+        existingScript.addEventListener('load', renderWidget, { once: true });
+      }
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.voxpodTurnstile = 'true';
+      script.addEventListener('load', renderWidget, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+      if (demoTurnstileWidgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(demoTurnstileWidgetIdRef.current);
+        demoTurnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [authUser, isAuthReady, demoTurnstileSiteKey]);
 
 	  useEffect(() => {
 	    setAiUsage(readPersistedAiUsage(authUser?.id ?? null));
@@ -4121,8 +4205,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!inputText.trim() || isBusy) return;
+  const generatePodcastEpisode = async (sourceTextOverride: string, titleSuffix: string = '', autoplay: boolean = true) => {
+    if (!sourceTextOverride.trim() || isBusy) return;
     setIsGenerating(true);
     setError(null);
 	    setAppError(null);
@@ -4174,14 +4258,15 @@ const App: React.FC = () => {
 
 	      const id = crypto.randomUUID();
 	      createdEpisodeId = id;
-	      const narrationText = buildSpeechSourceText(inputText, useSpeechCleanup);
+	      const narrationText = buildSpeechSourceText(sourceTextOverride, useSpeechCleanup);
 	      const chunks = chunkText(narrationText);
       if (chunks.length === 0) {
         setError(t('speech_cleanup_empty_error'));
         return;
       }
 
-      const title = inputText.trim().split('\n')[0].substring(0, 40) || t('new_episode_title');
+      const baseTitle = sourceTextOverride.trim().split('\n')[0].substring(0, 40) || t('new_episode_title');
+      const title = titleSuffix ? `${baseTitle} ${titleSuffix}` : baseTitle;
       const totalSteps = chunks.length;
       const estimatedDuration = estimateEpisodeDurationSeconds(narrationText);
       const initialBufferSize = Math.min(INITIAL_PLAYBACK_BUFFER, chunks.length);
@@ -4200,7 +4285,7 @@ const App: React.FC = () => {
 	      partialEpisodeDraft = {
 	        id,
 	        title,
-	        text: inputText,
+	        text: sourceTextOverride,
 	        date: Date.now(),
 	        bookmarks: [],
 	        categories: [],
@@ -4231,7 +4316,7 @@ const App: React.FC = () => {
       const newEpisode: PodcastEpisode = {
         id,
         title,
-        text: inputText,
+        text: sourceTextOverride,
         date: Date.now(),
         bookmarks: [],
         categories: [],
@@ -4247,7 +4332,9 @@ const App: React.FC = () => {
 	      };
 
 	      updateLibrary(prev => [newEpisode, ...prev]);
-	      await handlePlayEpisode(newEpisode, 0);
+	      if (autoplay) {
+	        await handlePlayEpisode(newEpisode, 0);
+	      }
 
       for (let index = initialBufferSize; index < chunks.length; index++) {
         const { wavBuffer, duration, usage } = await buildChunkAudio(chunks[index], selectedVoice as VoiceName, {
@@ -4309,6 +4396,90 @@ const App: React.FC = () => {
         setGenerationSession(null);
         setRetryNotice(null);
       }
+    }
+  };
+
+  const createGenerationPreview = (sourceText: string): PodcastGenerationPreview => {
+    const episodeTexts = splitLongTextPreservingWords(sourceText.trim(), MAX_PODCAST_EPISODE_CHARACTERS);
+    const estimates = episodeTexts.map((episodeText) => {
+      const narrationText = buildSpeechSourceText(episodeText, useSpeechCleanup);
+      const durationSeconds = estimateEpisodeDurationSeconds(narrationText);
+      const inputTokens = estimateTextTokens(narrationText);
+      const outputTokens = Math.ceil(durationSeconds * ESTIMATED_AUDIO_TOKENS_PER_SECOND);
+      return {
+        durationSeconds,
+        requestCount: Math.max(1, chunkText(narrationText).length),
+        inputTokens,
+        outputTokens,
+      };
+    });
+    const inputTokens = estimates.reduce((sum, estimate) => sum + estimate.inputTokens, 0);
+    const outputTokens = estimates.reduce((sum, estimate) => sum + estimate.outputTokens, 0);
+
+    return {
+      episodeTexts,
+      durationSeconds: estimates.reduce((sum, estimate) => sum + estimate.durationSeconds, 0),
+      requestCount: estimates.reduce((sum, estimate) => sum + estimate.requestCount, 0),
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      totalCostUsd: (inputTokens / 1_000_000) * 0.5 + (outputTokens / 1_000_000) * 10,
+    };
+  };
+
+  const handleGenerate = () => {
+    if (!inputText.trim() || isBusy) return;
+    if (isScanning) {
+      void generatePodcastEpisode(inputText);
+      return;
+    }
+    setPendingGenerationPreview(createGenerationPreview(inputText));
+  };
+
+  const confirmPodcastGeneration = async () => {
+    const preview = pendingGenerationPreview;
+    if (!preview) return;
+    setPendingGenerationPreview(null);
+    for (let index = 0; index < preview.episodeTexts.length; index++) {
+      const suffix = preview.episodeTexts.length > 1 ? `(${index + 1}/${preview.episodeTexts.length})` : '';
+      await generatePodcastEpisode(preview.episodeTexts[index], suffix, index === 0);
+    }
+  };
+
+  const handleGeneratePublicDemo = async () => {
+    const text = demoText.trim();
+    if (!text || isGeneratingDemo) return;
+    if (text.length > PUBLIC_DEMO_MAX_CHARACTERS) {
+      setDemoError('Gratisprovet är begränsat till cirka 2 minuter. Korta texten innan du provar.');
+      return;
+    }
+    if (!demoTurnstileToken) {
+      setDemoError('Bekräfta först att du är mänsklig.');
+      return;
+    }
+
+    setDemoError(null);
+    setIsGeneratingDemo(true);
+    try {
+      let deviceId = localStorage.getItem(PUBLIC_DEMO_DEVICE_ID_KEY);
+      if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem(PUBLIC_DEMO_DEVICE_ID_KEY, deviceId);
+      }
+      const result = await generatePublicDemoTTS(text, {
+        turnstileToken: demoTurnstileToken,
+        deviceId,
+      });
+      const wavBuffer = pcmToWav(decodeBase64ToUint8(result.audio), AUDIO_SAMPLE_RATE);
+      setDemoAudioUrl(URL.createObjectURL(new Blob([wavBuffer], { type: 'audio/wav' })));
+      setDemoTurnstileToken('');
+      if (demoTurnstileWidgetIdRef.current && window.turnstile) {
+        window.turnstile.reset(demoTurnstileWidgetIdRef.current);
+      }
+    } catch (demoGenerationError) {
+      setDemoError(demoGenerationError instanceof Error ? demoGenerationError.message : 'Demon kunde inte skapas.');
+    } finally {
+      setIsGeneratingDemo(false);
     }
   };
 
@@ -6060,6 +6231,54 @@ const App: React.FC = () => {
                 </button>
               )}
             </div>
+
+            {!isForgotPasswordRoute && (
+              <section className="space-y-3 rounded-3xl border border-[#d8d0ed] bg-[#f7f4fc] p-4 text-left">
+                <div>
+                  <p className={subtleLabelClass}>Prova gratis</p>
+                  <h3 className="mt-1 text-base font-black text-zinc-950">Skapa upp till 2 minuter ljud</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+                    En provgenerering utan konto. Logga in för att skapa och spara fullständiga poddar.
+                  </p>
+                </div>
+                <textarea
+                  value={demoText}
+                  onChange={(event) => {
+                    setDemoText(event.target.value.slice(0, PUBLIC_DEMO_MAX_CHARACTERS));
+                    setDemoError(null);
+                  }}
+                  placeholder="Klistra in en kort text att provlyssna på..."
+                  className="h-24 w-full resize-none rounded-2xl border border-[#d8d0ed] bg-white p-3 text-sm leading-relaxed text-zinc-800 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+                />
+                <div className="flex justify-between text-[10px] font-bold text-zinc-500">
+                  <span>Max cirka {formatTime(PUBLIC_DEMO_MAX_SECONDS)}</span>
+                  <span>{demoText.length} / {PUBLIC_DEMO_MAX_CHARACTERS}</span>
+                </div>
+                {demoTurnstileSiteKey ? (
+                  <div ref={demoTurnstileContainerRef} className="min-h-[65px]" />
+                ) : (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+                    Gratisprovet aktiveras när Turnstile är konfigurerat.
+                  </p>
+                )}
+                {demoError && (
+                  <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                    {demoError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { void handleGeneratePublicDemo(); }}
+                  disabled={!demoTurnstileSiteKey || !demoText.trim() || !demoTurnstileToken || isGeneratingDemo}
+                  className={classNames('w-full min-h-[52px] rounded-2xl px-4 text-xs font-black text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none', accentButtonClass)}
+                >
+                  {isGeneratingDemo ? 'Skapar provljud...' : 'Prova VoxPod'}
+                </button>
+                {demoAudioUrl && (
+                  <audio controls src={demoAudioUrl} className="w-full" aria-label="Provljud" />
+                )}
+              </section>
+            )}
             </div>
           </section>
         </main>
@@ -6972,6 +7191,86 @@ const App: React.FC = () => {
         </section>
 
       </main>
+
+      {pendingGenerationPreview && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.24)] p-5 backdrop-blur-sm animate-in fade-in duration-200">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="generation-preview-title"
+            className="w-full max-w-[440px] space-y-4 rounded-[2.2rem] border border-[#d8d0ed] bg-[#f1edf9] p-5 text-left shadow-[0_36px_90px_-54px_rgba(32,15,93,0.42)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className={subtleLabelClass}>Innan du skapar</p>
+                <h2 id="generation-preview-title" className="mt-2 text-xl font-black tracking-tight text-zinc-950">
+                  {pendingGenerationPreview.episodeTexts.length > 1
+                    ? `Texten delas upp i ${pendingGenerationPreview.episodeTexts.length} poddar`
+                    : 'Skapa denna podd?'}
+                </h2>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-600">
+                  Beräkningen är en uppskattning. Faktiska tokens och kostnad loggas efter skapandet.
+                </p>
+              </div>
+              <button
+                onClick={() => setPendingGenerationPreview(null)}
+                className="text-2xl leading-none text-zinc-400 hover:text-zinc-700"
+                aria-label="Stäng"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm font-bold text-zinc-800">
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.15em] text-zinc-500">Längd</p>
+                <p className="mt-1 text-base font-black">{formatTime(pendingGenerationPreview.durationSeconds)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.15em] text-zinc-500">API-anrop</p>
+                <p className="mt-1 text-base font-black">{pendingGenerationPreview.requestCount}</p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.15em] text-zinc-500">Tokens behövs</p>
+                <p className="mt-1 text-base font-black">ca {formatTokenDisplay(pendingGenerationPreview.totalTokens)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.15em] text-zinc-500">Betalpris</p>
+                <p className="mt-1 text-base font-black">ca {formatUsdCost(pendingGenerationPreview.totalCostUsd)}</p>
+              </div>
+            </div>
+
+            <p className="rounded-2xl border border-[#d8d0ed] bg-white/65 px-3 py-2 text-xs font-bold text-zinc-700">
+              Din visade tokenbudget efter skapandet: cirka {formatTokenDisplay(Math.max(0, usageSummary.remainingTokens - pendingGenerationPreview.totalTokens))} tokens kvar.
+            </p>
+
+            {pendingGenerationPreview.episodeTexts.length > 1 && (
+              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                Ett avsnitt begränsas till cirka 1 timme för stabil skapning och uppspelning.
+              </p>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingGenerationPreview(null)}
+                className={classNames('min-h-[50px] rounded-2xl px-4 text-xs font-black', darkButtonClass)}
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={() => { void confirmPodcastGeneration(); }}
+                className={classNames('min-h-[50px] rounded-2xl px-4 text-xs font-black', accentButtonClass)}
+              >
+                {pendingGenerationPreview.episodeTexts.length > 1
+                  ? `Skapa ${pendingGenerationPreview.episodeTexts.length} poddar`
+                  : 'Skapa podd'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {isSupabaseConfigured && showAuthPanel && (
         <>

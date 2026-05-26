@@ -6,6 +6,8 @@ import { viteGeminiMiddleware } from './server/viteGeminiMiddleware';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     process.env.GEMINI_API_KEY ||= env.GEMINI_API_KEY;
+    process.env.TURNSTILE_SECRET_KEY ||= env.TURNSTILE_SECRET_KEY;
+    process.env.TURNSTILE_SITE_KEY ||= env.TURNSTILE_SITE_KEY;
 
     return {
       server: {

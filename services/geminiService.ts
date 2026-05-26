@@ -29,6 +29,11 @@ export type GeminiTtsResult = {
   usage?: GeminiGenerationUsage;
 };
 
+export type PublicDemoTtsOptions = {
+  turnstileToken: string;
+  deviceId: string;
+};
+
 type GeminiStreamPayload = {
   action: "extractImageStream";
   base64Data: string;
@@ -198,6 +203,28 @@ const postGemini = async <T>(
   }
 };
 
+const postPublicGemini = async <T>(payload: Record<string, unknown>): Promise<T> => {
+  const response = await fetch(GEMINI_API_ROUTE, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      typeof result?.error === "string" ? result.error : "Ett serverfel uppstod.";
+    throw new GeminiRequestError(message, {
+      status: response.status,
+      retryable: false,
+    });
+  }
+
+  return result as T;
+};
+
 const streamGeminiText = async (
   payload: GeminiStreamPayload,
   onChunk: (textChunk: string) => void
@@ -290,6 +317,22 @@ export const generateTTS = async (
 
   return result;
 };
+
+export const generatePublicDemoTTS = async (
+  text: string,
+  options: PublicDemoTtsOptions
+): Promise<GeminiTtsResult> =>
+  postPublicGemini<GeminiTtsResult>({
+    action: "demoTts",
+    text,
+    turnstileToken: options.turnstileToken,
+    deviceId: options.deviceId,
+  });
+
+export const fetchPublicDemoConfiguration = async (): Promise<{ turnstileSiteKey: string }> =>
+  postPublicGemini<{ turnstileSiteKey: string }>({
+    action: "demoConfig",
+  });
 
 export const translateText = async (
   text: string,
