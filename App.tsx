@@ -6104,183 +6104,194 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <main className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-[430px] items-center px-4 py-8 md:max-w-[520px]">
-          <section className={classNames('w-full space-y-4 overflow-hidden p-0', activeLayoutPreset.panelClassName)}>
-            <div className="relative h-44 overflow-hidden sm:h-52">
-              <img
-                src={heroPreviewImage}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover object-[center_24%]"
-              />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(242,242,242,0.02),rgba(57,27,166,0.12)_28%,rgba(32,15,93,0.72)_100%)]" />
-              <div className="absolute bottom-4 left-5 right-5">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/72">VoxPod</p>
-                <h2 className="mt-1 max-w-[16ch] text-2xl font-black leading-tight tracking-tight text-white">
+        <main className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-6xl items-start justify-center px-4 py-6 lg:items-center lg:px-8 lg:py-10">
+          <div className="grid w-full gap-4 lg:grid-cols-[minmax(360px,1.05fr)_minmax(340px,0.95fr)] lg:items-start">
+            {!isForgotPasswordRoute && (
+              <section className={classNames('order-1 w-full overflow-hidden p-0', activeLayoutPreset.panelClassName)}>
+                <div className="relative h-44 overflow-hidden sm:h-52">
+                  <img
+                    src={heroPreviewImage}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover object-[center_24%]"
+                  />
+                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(242,242,242,0.02),rgba(57,27,166,0.12)_28%,rgba(32,15,93,0.72)_100%)]" />
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/72">Prova gratis</p>
+                    <h2 className="mt-1 max-w-[18ch] text-2xl font-black leading-tight tracking-tight text-white">
+                      Skapa ljud direkt från text
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="space-y-3 p-5 text-left sm:p-6">
+                  <div>
+                    <p className={subtleLabelClass}>Prova gratis</p>
+                    <h3 className="mt-1 text-lg font-black text-zinc-950">Skapa upp till 2 minuter ljud</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+                      En provgenerering utan konto. Logga in för att skapa och spara fullständiga poddar.
+                    </p>
+                  </div>
+                  <textarea
+                    value={demoText}
+                    onChange={(event) => {
+                      setDemoText(event.target.value.slice(0, PUBLIC_DEMO_MAX_CHARACTERS));
+                      setDemoError(null);
+                    }}
+                    placeholder="Klistra in en kort text att provlyssna på..."
+                    className="h-28 w-full resize-none rounded-2xl border border-[#d8d0ed] bg-white p-3 text-sm leading-relaxed text-zinc-800 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
+                  />
+                  <div className="flex justify-between text-[10px] font-bold text-zinc-500">
+                    <span>Max cirka {formatTime(PUBLIC_DEMO_MAX_SECONDS)}</span>
+                    <span>{demoText.length} / {PUBLIC_DEMO_MAX_CHARACTERS}</span>
+                  </div>
+                  {demoTurnstileSiteKey ? (
+                    <div ref={demoTurnstileContainerRef} className="min-h-[65px]" />
+                  ) : (
+                    <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+                      Gratisprovet är inte aktiverat ännu. Du kan fortfarande logga in och använda VoxPod.
+                    </p>
+                  )}
+                  {demoError && (
+                    <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                      {demoError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { void handleGeneratePublicDemo(); }}
+                    disabled={!demoTurnstileSiteKey || !demoText.trim() || !demoTurnstileToken || isGeneratingDemo}
+                    className={classNames('w-full min-h-[52px] rounded-2xl px-4 text-xs font-black text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none', accentButtonClass)}
+                  >
+                    {isGeneratingDemo ? 'Skapar provljud...' : 'Prova VoxPod'}
+                  </button>
+                  {demoAudioUrl && (
+                    <audio controls src={demoAudioUrl} className="w-full" aria-label="Provljud" />
+                  )}
+                </div>
+              </section>
+            )}
+
+            <section
+              className={classNames(
+                'order-2 w-full space-y-4 p-5 text-left sm:p-6',
+                activeLayoutPreset.panelClassName,
+                isForgotPasswordRoute && 'mx-auto max-w-[430px] lg:col-span-2'
+              )}
+            >
+              <div>
+                <p className={subtleLabelClass}>VoxPod</p>
+                <h2 className="mt-2 text-xl font-black tracking-tight text-zinc-950">
                   {isForgotPasswordRoute ? t('auth_forgot_tab') : authMode === 'signUp' ? t('auth_sign_up_tab') : t('auth_sign_in_tab')}
                 </h2>
-              </div>
-            </div>
-
-            <div className="space-y-4 p-5 sm:p-6">
-            <div className="text-left">
-              <p className={subtleLabelClass}>VoxPod</p>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-600">Turn pages into podcasts — and keep your entire library synced wherever life takes you.</p>
-            </div>
-
-            {!isForgotPasswordRoute && (
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#ede8f8]/92 p-1">
-                <button
-                  onClick={() => {
-                    setAuthMode('signIn');
-                    navigateToAuthRoute(LOGIN_PATH);
-                  }}
-                  title={t('auth_sign_in_tab')}
-                  aria-label={t('auth_sign_in_tab')}
-                  className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
-                    authMode === 'signIn' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
-                  }`}
-                >
-                  {t('auth_sign_in_tab')}
-                </button>
-                <button
-                  onClick={() => {
-                    setAuthMode('signUp');
-                    navigateToAuthRoute(SIGNUP_PATH);
-                  }}
-                  title={t('auth_sign_up_tab')}
-                  aria-label={t('auth_sign_up_tab')}
-                  className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
-                    authMode === 'signUp' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
-                  }`}
-                >
-                  {t('auth_sign_up_tab')}
-                </button>
-              </div>
-            )}
-
-            {authFeedback && (
-              <div
-                role="status"
-                aria-live="polite"
-                className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
-                  authFeedback.kind === 'error'
-                    ? 'border-red-200 bg-red-50 text-red-700'
-                    : authFeedback.kind === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]'
-                }`}
-              >
-                {authFeedback.message}
-              </div>
-            )}
-
-            <div className="grid gap-3">
-              <div className="space-y-1">
-                <label htmlFor="auth-gate-email" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_email_label')}</label>
-                <input
-                  id="auth-gate-email"
-                  name="auth-gate-email"
-                  type="email"
-                  autoComplete="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  className={darkFieldClass}
-                />
+                <p className="mt-2 text-sm leading-relaxed text-zinc-600">Turn pages into podcasts - and keep your entire library synced wherever life takes you.</p>
               </div>
 
               {!isForgotPasswordRoute && (
+                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#ede8f8]/92 p-1">
+                  <button
+                    onClick={() => {
+                      setAuthMode('signIn');
+                      navigateToAuthRoute(LOGIN_PATH);
+                    }}
+                    title={t('auth_sign_in_tab')}
+                    aria-label={t('auth_sign_in_tab')}
+                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                      authMode === 'signIn' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                    }`}
+                  >
+                    {t('auth_sign_in_tab')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthMode('signUp');
+                      navigateToAuthRoute(SIGNUP_PATH);
+                    }}
+                    title={t('auth_sign_up_tab')}
+                    aria-label={t('auth_sign_up_tab')}
+                    className={`rounded-2xl px-4 py-3 text-[11px] font-black transition-colors ${
+                      authMode === 'signUp' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500'
+                    }`}
+                  >
+                    {t('auth_sign_up_tab')}
+                  </button>
+                </div>
+              )}
+
+              {authFeedback && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={`rounded-2xl border px-4 py-3 text-xs font-bold ${
+                    authFeedback.kind === 'error'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : authFeedback.kind === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-[#d8d0ed] bg-[#eee9f8] text-[#4d3d93]'
+                  }`}
+                >
+                  {authFeedback.message}
+                </div>
+              )}
+
+              <div className="grid gap-3">
                 <div className="space-y-1">
-                  <label htmlFor="auth-gate-password" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_password_label')}</label>
+                  <label htmlFor="auth-gate-email" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_email_label')}</label>
                   <input
-                    id="auth-gate-password"
-                    name="auth-gate-password"
-                    type="password"
-                    autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
+                    id="auth-gate-email"
+                    name="auth-gate-email"
+                    type="email"
+                    autoComplete="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
                     className={darkFieldClass}
                   />
                 </div>
-              )}
-            </div>
 
-            <button
-              onClick={() => { void (isForgotPasswordRoute ? handleSendPasswordReset() : handleSubmitAuth()); }}
-              disabled={isAuthGateSubmitDisabled}
-              title={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
-              aria-label={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
-              className={classNames('w-full min-h-[64px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none active:scale-95 transition-all', accentButtonClass)}
-            >
-              {isAuthLoading
-                ? t('auth_loading')
-                : isForgotPasswordRoute
-                ? t('auth_reset_btn')
-                : authMode === 'signIn'
-                ? t('auth_sign_in_btn')
-                : t('auth_sign_up_btn')}
-            </button>
+                {!isForgotPasswordRoute && (
+                  <div className="space-y-1">
+                    <label htmlFor="auth-gate-password" className={classNames(subtleLabelClass, 'ml-2')}>{t('auth_password_label')}</label>
+                    <input
+                      id="auth-gate-password"
+                      name="auth-gate-password"
+                      type="password"
+                      autoComplete={authMode === 'signIn' ? 'current-password' : 'new-password'}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className={darkFieldClass}
+                    />
+                  </div>
+                )}
+              </div>
 
-            <div className="flex flex-wrap justify-center gap-3 text-[11px] font-black text-[#4d3d93]">
-              {isForgotPasswordRoute ? (
-                <button onClick={() => navigateToAuthRoute(LOGIN_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
-                  {t('auth_sign_in_tab')}
-                </button>
-              ) : (
-                <button onClick={() => navigateToAuthRoute(FORGOT_PASSWORD_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
-                  {t('auth_forgot_tab')}
-                </button>
-              )}
-            </div>
+              <button
+                onClick={() => { void (isForgotPasswordRoute ? handleSendPasswordReset() : handleSubmitAuth()); }}
+                disabled={isAuthGateSubmitDisabled}
+                title={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
+                aria-label={isForgotPasswordRoute ? t('auth_reset_btn') : authMode === 'signIn' ? t('auth_sign_in_btn') : t('auth_sign_up_btn')}
+                className={classNames('w-full min-h-[64px] rounded-3xl font-black text-sm disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none active:scale-95 transition-all', accentButtonClass)}
+              >
+                {isAuthLoading
+                  ? t('auth_loading')
+                  : isForgotPasswordRoute
+                  ? t('auth_reset_btn')
+                  : authMode === 'signIn'
+                  ? t('auth_sign_in_btn')
+                  : t('auth_sign_up_btn')}
+              </button>
 
-            {!isForgotPasswordRoute && (
-              <section className="space-y-3 rounded-3xl border border-[#d8d0ed] bg-[#f7f4fc] p-4 text-left">
-                <div>
-                  <p className={subtleLabelClass}>Prova gratis</p>
-                  <h3 className="mt-1 text-base font-black text-zinc-950">Skapa upp till 2 minuter ljud</h3>
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-600">
-                    En provgenerering utan konto. Logga in för att skapa och spara fullständiga poddar.
-                  </p>
-                </div>
-                <textarea
-                  value={demoText}
-                  onChange={(event) => {
-                    setDemoText(event.target.value.slice(0, PUBLIC_DEMO_MAX_CHARACTERS));
-                    setDemoError(null);
-                  }}
-                  placeholder="Klistra in en kort text att provlyssna på..."
-                  className="h-24 w-full resize-none rounded-2xl border border-[#d8d0ed] bg-white p-3 text-sm leading-relaxed text-zinc-800 outline-none focus:ring-2 focus:ring-[#7763BE]/22"
-                />
-                <div className="flex justify-between text-[10px] font-bold text-zinc-500">
-                  <span>Max cirka {formatTime(PUBLIC_DEMO_MAX_SECONDS)}</span>
-                  <span>{demoText.length} / {PUBLIC_DEMO_MAX_CHARACTERS}</span>
-                </div>
-                {demoTurnstileSiteKey ? (
-                  <div ref={demoTurnstileContainerRef} className="min-h-[65px]" />
+              <div className="flex flex-wrap justify-center gap-3 text-[11px] font-black text-[#4d3d93]">
+                {isForgotPasswordRoute ? (
+                  <button onClick={() => navigateToAuthRoute(LOGIN_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
+                    {t('auth_sign_in_tab')}
+                  </button>
                 ) : (
-                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-                    Gratisprovet aktiveras när Turnstile är konfigurerat.
-                  </p>
+                  <button onClick={() => navigateToAuthRoute(FORGOT_PASSWORD_PATH)} className="underline decoration-[#7763BE]/40 underline-offset-4">
+                    {t('auth_forgot_tab')}
+                  </button>
                 )}
-                {demoError && (
-                  <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
-                    {demoError}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { void handleGeneratePublicDemo(); }}
-                  disabled={!demoTurnstileSiteKey || !demoText.trim() || !demoTurnstileToken || isGeneratingDemo}
-                  className={classNames('w-full min-h-[52px] rounded-2xl px-4 text-xs font-black text-white transition-all active:scale-95 disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none', accentButtonClass)}
-                >
-                  {isGeneratingDemo ? 'Skapar provljud...' : 'Prova VoxPod'}
-                </button>
-                {demoAudioUrl && (
-                  <audio controls src={demoAudioUrl} className="w-full" aria-label="Provljud" />
-                )}
-              </section>
-            )}
-            </div>
-          </section>
+              </div>
+            </section>
+          </div>
         </main>
       </div>
     );
